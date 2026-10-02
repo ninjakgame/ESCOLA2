@@ -1,0 +1,9 @@
+{
+  "name": "caderno-de-turma",
+  "version": "3.0.0",
+  "description": "Caderno de Turma com MongoDB",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "mongodb": "^6.8.0" }
+}
