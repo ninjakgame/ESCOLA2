@@ -18078,9 +18078,9 @@ function ProfessorApp({ user, onLogout }) {
         setTurmas(next);
         await setShared("turmas", next);
     }
-    async function criarTurma({ nome, materia }) {
+    async function criarTurma({ nome, materia, serie }) {
         const nova = {
-            id: uid(), nome, materia, professor: user.nome,
+            id: uid(), nome, materia, serie, professor: user.nome,
             conteudos: [], livros: [], simulados: [], provas: [], reunioes: []
         };
         const next = [...turmas, nova];
@@ -18108,6 +18108,10 @@ function ProfessorApp({ user, onLogout }) {
         React.createElement("div", { style: { display: "flex", minHeight: "calc(100vh - 65px)" } },
             React.createElement(SidebarTurmas, { titulo: "Minhas turmas", turmas: minhas, ativaId: secao === "turmas" ? turmaAtivaId : null, onSelect: (id) => { setTurmaAtivaId(id); setAba("conteudos"); setCriando(false); setSecao("turmas"); }, onNova: () => { setCriando(true); setTurmaAtivaId(null); setSecao("turmas"); }, onExcluir: excluirTurma, extrasTop: [
                     {
+                        label: "Registrar assunto", icon: ClipboardList, ativa: secao === "turmas" && !turmaAtivaId && !criando,
+                        onClick: () => { setSecao("turmas"); setTurmaAtivaId(null); setCriando(false); }
+                    },
+                    {
                         label: "Calendário", icon: CalendarClock, ativa: secao === "calendario",
                         onClick: () => { setSecao("calendario"); setTurmaAtivaId(null); setCriando(false); }
                     },
@@ -18116,7 +18120,61 @@ function ProfessorApp({ user, onLogout }) {
                         onClick: () => { setSecao("redacoes"); setTurmaAtivaId(null); setCriando(false); }
                     }
                 ] }),
-            React.createElement("div", { style: { flex: 1, padding: "28px 32px", maxWidth: 900 } }, secao === "calendario" ? (React.createElement(CalendarioView, { user: user, podeAdicionar: true, turmasProfessor: minhas })) : secao === "redacoes" ? (React.createElement(RedacoesProfessor, null)) : criando ? (React.createElement(NovaTurmaForm, { onCriar: criarTurma, onCancelar: () => setCriando(false) })) : turmaAtiva ? (React.createElement(TurmaEditor, { turma: turmaAtiva, aba: aba, setAba: setAba, atualizar: (fn) => atualizarTurma(turmaAtiva.id, fn), professor: user.nome })) : (React.createElement(EmptyState, { icon: ClipboardList, titulo: "Nenhuma turma selecionada", texto: "Escolha uma turma na lista ao lado ou crie uma nova turma para come\u00E7ar a organizar conte\u00FAdos, aulas e atividades.", acao: { label: "Criar turma", onClick: () => setCriando(true) } }))))));
+            React.createElement("div", { style: { flex: 1, padding: "28px 32px", maxWidth: 900 } }, secao === "calendario" ? (React.createElement(CalendarioView, { user: user, podeAdicionar: true, turmasProfessor: minhas })) : secao === "redacoes" ? (React.createElement(RedacoesProfessor, null)) : criando ? (React.createElement(NovaTurmaForm, { onCriar: criarTurma, onCancelar: () => setCriando(false) })) : turmaAtiva ? (React.createElement(TurmaEditor, { turma: turmaAtiva, aba: aba, setAba: setAba, atualizar: (fn) => atualizarTurma(turmaAtiva.id, fn), professor: user.nome })) : (React.createElement(RegistrarAssunto, { turmas: minhas, atualizar: atualizarTurma, onCriarTurma: () => setCriando(true), onAbrirTurma: (id) => { setTurmaAtivaId(id); setAba("conteudos"); setCriando(false); setSecao("turmas"); } }))))));
+}
+function RegistrarAssunto({ turmas, atualizar, onCriarTurma, onAbrirTurma }) {
+    const [turmaId, setTurmaId] = useState("");
+    const [assunto, setAssunto] = useState("");
+    const [descricao, setDescricao] = useState("");
+    const [erro, setErro] = useState("");
+    const [salvo, setSalvo] = useState(null);
+    const turma = turmas.find(t => t.id === turmaId) || null;
+    function registrar() {
+        if (!turma) {
+            setErro("Escolha a turma primeiro.");
+            return;
+        }
+        if (!assunto.trim()) {
+            setErro("Escreva o assunto da aula.");
+            return;
+        }
+        setErro("");
+        atualizar(turma.id, t => ({
+            ...t,
+            conteudos: [...(t.conteudos || []), {
+                    id: uid(), titulo: assunto.trim(), descricao: descricao.trim(),
+                    data: hojeFmt(), dataEntrega: "", arquivoNome: "", arquivoDataUrl: ""
+                }]
+        }));
+        setSalvo({ id: turma.id, nome: turma.nome, assunto: assunto.trim() });
+        setAssunto("");
+        setDescricao("");
+    }
+    return (React.createElement("div", { style: { maxWidth: 520 } },
+        React.createElement("h2", { style: { fontFamily: T.serif, fontSize: 26, margin: "0 0 4px" } }, "Registrar assunto da aula"),
+        React.createElement("p", { style: { color: T.muted, fontSize: 13.5, marginBottom: 22 } }, "Escolha a turma e escreva o assunto dado. Os alunos dessa turma veem o assunto na aba Conte\u00FAdos."),
+        turmas.length === 0 ? (React.createElement(EmptyState, { icon: ClipboardList, titulo: "Nenhuma turma dispon\u00EDvel", texto: "Voc\u00EA ainda n\u00E3o tem turmas. Crie uma turma para poder registrar assuntos.", acao: { label: "Criar turma", onClick: onCriarTurma } })) : (React.createElement("div", { style: { background: T.card, border: `1px solid ${T.line}`, borderRadius: 4, padding: 18 } },
+            React.createElement(Field, { label: "Turma" },
+                React.createElement("select", { value: turmaId, onChange: e => { setTurmaId(e.target.value); setErro(""); setSalvo(null); }, style: inputStyle },
+                    React.createElement("option", { value: "" }, "Escolha a turma\u2026"),
+                    turmas.map(t => React.createElement("option", { key: t.id, value: t.id }, (String(t.nome).includes(t.materia) ? t.nome : `${t.nome} \u2014 ${t.materia}`) + (t.serie ? ` \u00B7 ${t.serie}` : ""))))),
+            React.createElement(Field, { label: "Assunto" },
+                React.createElement("input", { value: assunto, onChange: e => { setAssunto(e.target.value); setErro(""); }, onKeyDown: e => e.key === "Enter" && registrar(), placeholder: "Ex: Equa\u00E7\u00F5es do 2\u00BA grau", style: inputStyle })),
+            React.createElement(Field, { label: "Descri\u00E7\u00E3o (opcional)" },
+                React.createElement("textarea", { value: descricao, onChange: e => setDescricao(e.target.value), placeholder: "O que foi trabalhado em aula", style: { ...inputStyle, minHeight: 70, resize: "vertical" } })),
+            erro && React.createElement("div", { style: { color: T.erro, fontSize: 13, marginBottom: 8 } }, erro),
+            salvo && (React.createElement("div", { style: { background: "#E6F4EA", border: "1px solid #8CC9A0", color: "#1E6B3A", borderRadius: 4, padding: 10, fontSize: 13, marginBottom: 10 } },
+                "Assunto \u201C", salvo.assunto, "\u201D registrado na turma ", React.createElement("strong", null, salvo.nome), ". ",
+                React.createElement("button", { type: "button", onClick: () => onAbrirTurma(salvo.id), style: { border: "none", background: "transparent", color: "#1E6B3A", textDecoration: "underline", fontWeight: 700, fontSize: 13, padding: 0 } }, "Abrir turma"))),
+            React.createElement("button", { onClick: registrar, style: btnPrimary },
+                React.createElement(Plus, { size: 15, style: { marginRight: 6, verticalAlign: -3 } }),
+                "Registrar assunto"))),
+            turma && (turma.conteudos || []).length > 0 && (React.createElement("div", { style: { marginTop: 20 } },
+                React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: T.muted, marginBottom: 8 } }, "\u00DAltimos assuntos desta turma"),
+                React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, [...turma.conteudos].slice(-5).reverse().map(c => (React.createElement("div", { key: c.id, style: itemCardStyle },
+                    React.createElement("div", { style: { flex: 1 } },
+                        React.createElement("div", { style: { fontWeight: 700, fontSize: 14 } }, c.titulo),
+                        React.createElement("div", { style: { fontSize: 11.5, color: T.muted, marginTop: 2 } }, "Registrado em ", c.data))))))))));
 }
 function SidebarTurmas({ titulo, turmas, ativaId, onSelect, onNova, onExcluir, extrasTop }) {
     const [confirmandoId, setConfirmandoId] = useState(null);
@@ -18151,7 +18209,7 @@ function SidebarTurmas({ titulo, turmas, ativaId, onSelect, onNova, onExcluir, e
                 React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: corMateria(t.materia), flexShrink: 0 } }),
                 React.createElement("div", { style: { flex: 1, minWidth: 0 } },
                     React.createElement("div", { style: { fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, t.nome),
-                    React.createElement("div", { style: { fontSize: 11.5, color: T.muted } }, t.materia)),
+                    React.createElement("div", { style: { fontSize: 11.5, color: T.muted } }, t.materia + " \u00B7 " + (t.serie || "sem s\u00E9rie"))),
                 onExcluir && (React.createElement("button", { onClick: (e) => { e.stopPropagation(); setConfirmandoId(confirmandoId === t.id ? null : t.id); }, style: { border: "none", background: "transparent", color: T.muted, padding: 4 } },
                     React.createElement(Trash2, { size: 13 })))),
             confirmandoId === t.id && (React.createElement("div", { style: {
@@ -18171,16 +18229,19 @@ function SidebarTurmas({ titulo, turmas, ativaId, onSelect, onNova, onExcluir, e
 function NovaTurmaForm({ onCriar, onCancelar }) {
     const [nome, setNome] = useState("");
     const [materia, setMateria] = useState(MATERIAS[0]);
+    const [serie, setSerie] = useState(SERIES[0]);
     return (React.createElement("div", { style: { maxWidth: 440 } },
         React.createElement("h2", { style: { fontFamily: T.serif, fontSize: 24, marginBottom: 4 } }, "Criar nova turma"),
-        React.createElement("p", { style: { color: T.muted, fontSize: 13.5, marginBottom: 22 } }, "Cada turma pertence a uma mat\u00E9ria. Alunos ver\u00E3o essa turma na lista deles."),
+        React.createElement("p", { style: { color: T.muted, fontSize: 13.5, marginBottom: 22 } }, "Cada turma pertence a uma s\u00E9rie e a uma mat\u00E9ria. Somente os alunos da s\u00E9rie escolhida v\u00E3o ver essa turma e os conte\u00FAdos dela."),
         React.createElement(Field, { label: "Nome da turma" },
             React.createElement("input", { value: nome, onChange: e => setNome(e.target.value), placeholder: "Ex: 9\u00BA Ano A \u2014 Matem\u00E1tica", style: inputStyle })),
+        React.createElement(Field, { label: "S\u00E9rie dos alunos" },
+            React.createElement("select", { value: serie, onChange: e => setSerie(e.target.value), style: inputStyle }, SERIES.map(sr => React.createElement("option", { key: sr, value: sr }, sr)))),
         React.createElement(Field, { label: "Mat\u00E9ria" },
             React.createElement("select", { value: materia, onChange: e => setMateria(e.target.value), style: inputStyle }, MATERIAS.map(m => React.createElement("option", { key: m, value: m }, m)))),
         React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 20 } },
             React.createElement("button", { onClick: onCancelar, style: btnGhost }, "Cancelar"),
-            React.createElement("button", { onClick: () => nome.trim() && onCriar({ nome: nome.trim(), materia }), style: btnPrimary }, "Criar turma"))));
+            React.createElement("button", { onClick: () => nome.trim() && onCriar({ nome: nome.trim(), materia, serie }), style: btnPrimary }, "Criar turma"))));
 }
 const ABAS_PROFESSOR = [
     { k: "conteudos", label: "Conteúdos", icon: ClipboardList },
@@ -18196,7 +18257,13 @@ function TurmaEditor({ turma, aba, setAba, atualizar, professor }) {
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 4 } },
             React.createElement("div", { style: { width: 10, height: 10, borderRadius: "50%", background: corMateria(turma.materia) } }),
             React.createElement("span", { style: { fontSize: 12.5, fontWeight: 800, color: T.muted, textTransform: "uppercase", letterSpacing: 0.4 } }, turma.materia)),
-        React.createElement("h2", { style: { fontFamily: T.serif, fontSize: 27, margin: "2px 0 20px" } }, turma.nome),
+        React.createElement("h2", { style: { fontFamily: T.serif, fontSize: 27, margin: "2px 0 8px" } }, turma.nome),
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 18, flexWrap: "wrap" } },
+            React.createElement("span", { style: { fontSize: 12.5, fontWeight: 800, color: T.muted } }, "S\u00E9rie dos alunos:"),
+            React.createElement("select", { value: turma.serie || "", onChange: e => atualizar(t => ({ ...t, serie: e.target.value })), style: { ...inputStyle, width: "auto", padding: "6px 10px", fontSize: 13 } },
+                !turma.serie && React.createElement("option", { value: "" }, "Escolha a s\u00E9rie\u2026"),
+                SERIES.map(sr => React.createElement("option", { key: sr, value: sr }, sr))),
+            !turma.serie && React.createElement("span", { style: { fontSize: 12.5, color: T.erro, fontWeight: 700 } }, "Sem s\u00E9rie, nenhum aluno v\u00EA esta turma.")),
         React.createElement("div", { style: { display: "flex", gap: 26, alignItems: "flex-start" } },
             React.createElement(AbasLaterais, { abas: ABAS_PROFESSOR, ativa: aba, onChange: setAba }),
             React.createElement("div", { style: { flex: 1, minWidth: 0 } },
@@ -18439,7 +18506,8 @@ function AlunoApp({ user, onLogout }) {
     const [carregando, setCarregando] = useState(true);
     useEffect(() => {
         (async () => {
-            setTurmas(await getShared("turmas", []));
+            const todas = await getShared("turmas", []);
+            setTurmas(todas.filter(t => t.serie && t.serie === user.serie));
             setCarregando(false);
         })();
     }, []);
@@ -18811,7 +18879,8 @@ function CalendarioView({ user, podeAdicionar, turmasProfessor }) {
             return;
         const novo = {
             id: uid(), data: diaSelecionado, titulo: tituloNovo.trim(), descricao: descNovo.trim(),
-            autor: user.nome, papel: user.papel, turmaNome: turmaNovo || ""
+            autor: user.nome, papel: user.papel, turmaNome: turmaNovo || "",
+            turmaSerie: ((turmasProfessor || []).find(t => t.nome === turmaNovo) || {}).serie || ""
         };
         await salvarEventos([...eventos, novo]);
         setTituloNovo("");
@@ -18841,8 +18910,10 @@ function CalendarioView({ user, podeAdicionar, turmasProfessor }) {
     if (carregando)
         return React.createElement("div", { style: { color: T.muted, fontSize: 13.5 } }, "Carregando calend\u00E1rio\u2026");
     const dias = construirGradeMes(ano, mes);
+    // Aluno só vê eventos gerais ou de turmas da própria série
+    const visivelParaUsuario = (e) => user.papel !== "aluno" || !e.turmaNome || (!!e.turmaSerie && e.turmaSerie === user.serie);
     const eventosPorDia = {};
-    eventos.forEach(e => { (eventosPorDia[e.data] = eventosPorDia[e.data] || []).push(e); });
+    eventos.filter(visivelParaUsuario).forEach(e => { (eventosPorDia[e.data] = eventosPorDia[e.data] || []).push(e); });
     const eventosDoDia = (eventosPorDia[diaSelecionado] || []).sort((a, b) => a.titulo.localeCompare(b.titulo));
     return (React.createElement("div", null,
         React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 14, marginBottom: 18 } },
