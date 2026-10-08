@@ -18266,6 +18266,13 @@ function escHtml(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function escBr(s) { return escHtml(s).replace(/\r?\n/g, "<br>"); }
+function extrairJsonRespostaIA(texto) {
+    let limpo = String(texto || "").replace(/```json|```/g, "").trim();
+    const ini = limpo.indexOf("{"), fim = limpo.lastIndexOf("}");
+    if (ini !== -1 && fim > ini)
+        limpo = limpo.slice(ini, fim + 1);
+    return JSON.parse(limpo);
+}
 function nomeArquivoSeguro(s) {
     return String(s || "questoes").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "questoes";
 }
@@ -18363,6 +18370,62 @@ async function chamarGeminiComRetentativa(corpo) {
     }
     throw ultimo;
 }
+function normalizarQuestaoIA(q) {
+    const semPrefixo = (x) => String(x || "").replace(/^\s*(\(?[A-Fa-f]\)|[A-Fa-f][\)\.\-:])\s+/, "").trim();
+    const t = ["multipla", "dissertativa", "vf"].includes(q.tipo) ? q.tipo : (Array.isArray(q.alternativas) && q.alternativas.length ? "multipla" : "dissertativa");
+    const alternativas = Array.isArray(q.alternativas) ? q.alternativas.map(semPrefixo).filter(Boolean) : [];
+    const resposta = String(q.resposta || "").trim();
+    const normalizada = {
+        tipo: t,
+        enunciado: String(q.enunciado || "").trim(),
+        alternativas: t === "dissertativa" ? [] : alternativas,
+        resposta,
+        explicacao: String(q.explicacao || "").trim()
+    };
+    if (!normalizada.enunciado)
+        throw new Error("formato inesperado: questão sem enunciado");
+    if (t === "multipla") {
+        if (normalizada.alternativas.length !== 5)
+            throw new Error("formato inesperado: múltipla escolha sem 5 alternativas");
+        if (!/^[A-E]$/i.test(resposta))
+            throw new Error("formato inesperado: gabarito de múltipla escolha inválido");
+    }
+    if (t === "vf") {
+        const marcacoes = resposta.toUpperCase().match(/[VF]/g) || [];
+        if (normalizada.alternativas.length < 3 || normalizada.alternativas.length > 6 || marcacoes.length !== normalizada.alternativas.length)
+            throw new Error("formato inesperado: verdadeiro/falso sem gabarito completo");
+        normalizada.resposta = marcacoes.join(", ");
+    }
+    if (t === "dissertativa" && resposta.length < 8)
+        throw new Error("formato inesperado: questão dissertativa sem resposta esperada");
+    if (!normalizada.explicacao)
+        normalizada.explicacao = "Gabarito definido conforme o conteúdo solicitado.";
+    return normalizada;
+}
+function normalizarAnaliseRedacaoIA(parsed) {
+    const lista = (v) => Array.isArray(v) ? v.map(x => String(x || "").trim()).filter(Boolean) : [];
+    const notaBruta = Number(parsed && parsed.notaEstimada);
+    const nota = Number.isFinite(notaBruta) ? Math.max(0, Math.min(1000, Math.round(notaBruta / 20) * 20)) : 0;
+    const tiposValidos = ["ortografia", "acentuação", "gramática", "concordância", "regência", "coesão", "argumentação", "estrutura", "pontuação", "proposta de intervenção", "legibilidade"];
+    const erros = Array.isArray(parsed && parsed.erros) ? parsed.erros.map(e => {
+        const tipo = String((e && e.tipo) || "gramática").trim().toLowerCase();
+        return {
+            trecho: String((e && e.trecho) || "Trecho não informado").trim(),
+            tipo: tiposValidos.includes(tipo) ? tipo : "gramática",
+            explicacao: String((e && e.explicacao) || "A IA encontrou um problema neste ponto.").trim(),
+            sugestao: String((e && e.sugestao) || "Revise este trecho e reescreva com mais clareza.").trim()
+        };
+    }).filter(e => e.trecho && e.explicacao) : [];
+    const competencias = parsed && parsed.competencias && typeof parsed.competencias === "object" ? parsed.competencias : null;
+    return {
+        notaEstimada: nota,
+        resumo: String((parsed && parsed.resumo) || "A IA analisou a redação, mas retornou um resumo incompleto.").trim(),
+        pontosFortes: lista(parsed && parsed.pontosFortes),
+        erros,
+        competencias,
+        comoMelhorar: lista(parsed && parsed.comoMelhorar)
+    };
+}
 function QuestoesIA({ user, turmas, atualizar }) {
     const h = React.createElement;
     const [turmaId, setTurmaId] = useState("");
@@ -18435,10 +18498,12 @@ Para "dissertativa" use "alternativas": []. Para "multipla" use exatamente 5 alt
             const regras = `Regras de qualidade:
 - Enunciados claros, sem ambiguidade, com linguagem adequada à série e alinhados à BNCC (padrão ENEM no Ensino Médio).
 - Múltipla escolha: apenas UMA alternativa correta, distratores plausíveis baseados em erros comuns, sem "todas as anteriores"; varie a posição da resposta correta.
+- Verdadeiro/falso: cada afirmativa deve ser independente; o campo "resposta" deve trazer uma marcação V/F para cada afirmativa, na mesma ordem.
+- Dissertativas: inclua resposta esperada, pontos que devem aparecer e critérios de correção.
 - Conteúdo factualmente correto e verificável. Em Matemática/Física/Química confira os cálculos antes de definir o gabarito.
 - Não dependa de imagens, gráficos ou tabelas desenhadas; se precisar de dados, descreva-os em texto. Escreva fórmulas em texto simples/unicode (x², √, ½), sem LaTeX.
+- Antes de responder, faça uma revisão interna: confira se a quantidade está correta, se o gabarito bate com as alternativas, se não há questão repetida, se não há duas respostas corretas e se não existe erro conceitual.
 - Escreva tudo em português do Brasil.`;
-            const semPrefixo = (x) => String(x || "").replace(/^\s*(\(?[A-Ea-e]\)|[A-Ea-e][\)\.\-:])\s+/, "").trim();
             async function lote(n, jaFeitas) {
                 let prompt;
                 if (refinar && dados) {
@@ -18471,26 +18536,15 @@ ${formato}`;
                 const texto = Array.isArray(partes) ? partes.filter(p => !p.thought).map(p => p.text || "").join("\n") : "";
                 if (!texto.trim())
                     throw new Error("A IA não retornou nenhum conteúdo (resposta vazia)");
-                let limpo = texto.replace(/```json|```/g, "").trim();
-                const ini = limpo.indexOf("{"), fim = limpo.lastIndexOf("}");
-                if (ini !== -1 && fim > ini)
-                    limpo = limpo.slice(ini, fim + 1);
-                const parsed = JSON.parse(limpo);
+                const parsed = extrairJsonRespostaIA(texto);
                 if (!parsed || !Array.isArray(parsed.questoes) || parsed.questoes.length === 0)
                     throw new Error("formato inesperado");
-                const qs = parsed.questoes.map(q => {
-                    const t = ["multipla", "dissertativa", "vf"].includes(q.tipo) ? q.tipo : (Array.isArray(q.alternativas) && q.alternativas.length ? "multipla" : "dissertativa");
-                    return {
-                        tipo: t,
-                        enunciado: String(q.enunciado || "").trim(),
-                        alternativas: t === "dissertativa" ? [] : (Array.isArray(q.alternativas) ? q.alternativas.map(semPrefixo) : []),
-                        resposta: String(q.resposta || "").trim(),
-                        explicacao: String(q.explicacao || "").trim()
-                    };
-                }).filter(q => q.enunciado);
+                const qs = parsed.questoes.map(normalizarQuestaoIA);
                 if (!qs.length)
                     throw new Error("formato inesperado");
-                return { titulo: String(parsed.titulo || "").trim(), questoes: qs };
+                if (!refinar && qs.length < n)
+                    throw new Error(`formato inesperado: a IA retornou ${qs.length} de ${n} questões`);
+                return { titulo: String(parsed.titulo || "").trim(), questoes: refinar ? qs : qs.slice(0, n) };
             }
             let tituloNovo = "";
             let questoes = [];
@@ -19584,18 +19638,29 @@ function RedacaoAluno({ user }) {
         try {
             const base64 = dataUrl.split(",")[1];
             const prompt = `Você é um professor de redação experiente, especialista em correção de textos de estudantes brasileiros no padrão da redação do ENEM.
-Analise a foto de uma redação manuscrita ou digitada.
+Analise a foto de uma redação manuscrita ou digitada com máximo rigor, como uma revisão pedagógica completa.
+Leia o texto linha por linha. Identifique todos os problemas relevantes que conseguir ver, sem inventar trechos ilegíveis.
+Procure erros de ortografia, acentuação, pontuação, concordância, regência, crase, repetição vocabular, informalidade, frase truncada, coesão, coerência, argumentação, repertório, estrutura dissertativo-argumentativa, tese, conclusão e proposta de intervenção.
 Responda SOMENTE com um objeto JSON válido, sem markdown, sem crases, sem texto antes ou depois, no seguinte formato:
 {
   "notaEstimada": número inteiro de 0 a 1000, seguindo a escala oficial da redação do ENEM (múltiplos de 20, sem casas decimais),
   "resumo": "um parágrafo curto avaliando o texto de forma geral, em tom encorajador",
   "pontosFortes": ["ponto forte 1", "ponto forte 2"],
+  "competencias": {
+    "c1": "comentário curto sobre norma padrão",
+    "c2": "comentário curto sobre compreensão do tema e repertório",
+    "c3": "comentário curto sobre seleção e organização dos argumentos",
+    "c4": "comentário curto sobre coesão",
+    "c5": "comentário curto sobre proposta de intervenção"
+  },
   "erros": [
-    {"trecho": "trecho curto do texto com o erro, ou descrição do local", "tipo": "ortografia|gramática|coesão|argumentação|estrutura|pontuação", "explicacao": "por que é um erro", "sugestao": "como corrigir"}
+    {"trecho": "trecho curto do texto com o erro, ou descrição do local", "tipo": "ortografia|acentuação|gramática|concordância|regência|coesão|argumentação|estrutura|pontuação|proposta de intervenção|legibilidade", "explicacao": "por que é um erro", "sugestao": "como corrigir"}
   ],
   "comoMelhorar": ["dica prática 1", "dica prática 2", "dica prática 3"]
 }
-Se não conseguir ler o texto da imagem com clareza, responda com notaEstimada 0 e explique isso no campo "resumo", deixando "erros" como lista vazia.
+No campo "erros", liste problemas específicos e também padrões recorrentes. Se o mesmo erro se repetir muitas vezes, agrupe como padrão recorrente e cite exemplos.
+Não limite a lista a poucos erros: retorne até 40 itens quando houver muitos problemas.
+Se não conseguir ler o texto da imagem com clareza, responda com notaEstimada 0, explique isso no campo "resumo", coloque "legibilidade" nos erros quando houver partes ilegíveis e não invente conteúdo.
 Escreva tudo em português do Brasil.`;
             const data = await chamarGemini(chaveApi, {
                 contents: [{
@@ -19611,11 +19676,7 @@ Escreva tudo em português do Brasil.`;
             const textoResp = Array.isArray(partes) ? partes.filter(p => !p.thought).map(p => p.text || "").join("\n") : "";
             if (!textoResp.trim())
                 throw new Error("A IA não retornou nenhum conteúdo (resposta vazia)");
-            let limpo = textoResp.replace(/```json|```/g, "").trim();
-            const ini = limpo.indexOf("{"), fim = limpo.lastIndexOf("}");
-            if (ini !== -1 && fim > ini)
-                limpo = limpo.slice(ini, fim + 1);
-            const parsed = JSON.parse(limpo);
+            const parsed = normalizarAnaliseRedacaoIA(extrairJsonRespostaIA(textoResp));
             const registro = {
                 id: uid(), aluno: user.nome, matricula: user.matricula || "", data: hojeFmt(),
                 imagemDataUrl: dataUrl, ...parsed
@@ -19740,7 +19801,9 @@ function RedacoesProfessor() {
                 React.createElement("div", { style: { fontSize: 12, color: T.muted, marginTop: 8 } },
                     "Nota (escala ENEM): ",
                     React.createElement("strong", { style: { color: corNota(r.notaEstimada) } }, typeof r.notaEstimada === "number" ? Math.round(r.notaEstimada) : r.notaEstimada),
-                    " de 1000"))))))))));
+                    " de 1000"),
+                React.createElement("div", { style: { marginTop: 14 } },
+                    React.createElement(ResultadoRedacao, { r: r, compacto: true })))))))))));
 }
 function corNota(n) {
     if (n >= 800)
@@ -19750,7 +19813,14 @@ function corNota(n) {
     return T.erro;
 }
 function ResultadoRedacao({ r, compacto }) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
+    const competencias = r.competencias && typeof r.competencias === "object" ? [
+        ["C1", r.competencias.c1],
+        ["C2", r.competencias.c2],
+        ["C3", r.competencias.c3],
+        ["C4", r.competencias.c4],
+        ["C5", r.competencias.c5]
+    ].filter(([, v]) => v) : [];
     return (React.createElement("div", { style: { background: compacto ? "transparent" : T.card, border: compacto ? "none" : `1px solid ${T.line}`, borderRadius: 4, padding: compacto ? 0 : 20 } },
         !compacto && (React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 14, marginBottom: 14 } },
             React.createElement("div", { style: {
@@ -19765,7 +19835,12 @@ function ResultadoRedacao({ r, compacto }) {
         ((_a = r.pontosFortes) === null || _a === void 0 ? void 0 : _a.length) > 0 && (React.createElement("div", { style: { marginBottom: 16 } },
             React.createElement("div", { style: { fontWeight: 800, fontSize: 12.5, color: T.accent2, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.3 } }, "Pontos fortes"),
             React.createElement("ul", { style: { margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6 } }, r.pontosFortes.map((p, i) => React.createElement("li", { key: i }, p))))),
-        ((_b = r.erros) === null || _b === void 0 ? void 0 : _b.length) > 0 && (React.createElement("div", { style: { marginBottom: 16 } },
+        competencias.length > 0 && (React.createElement("div", { style: { marginBottom: 16 } },
+            React.createElement("div", { style: { fontWeight: 800, fontSize: 12.5, color: T.ink, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.3 } }, "Competências ENEM"),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, competencias.map(([c, texto]) => React.createElement("div", { key: c, style: { fontSize: 13.2, lineHeight: 1.45 } },
+                React.createElement("strong", null, c, ": "),
+                texto))))),
+        ((_b = r.erros) === null || _b === void 0 ? void 0 : _b.length) > 0 ? (React.createElement("div", { style: { marginBottom: 16 } },
             React.createElement("div", { style: { fontWeight: 800, fontSize: 12.5, color: T.erro, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.3 } }, "Erros encontrados"),
             React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, r.erros.map((e, i) => (React.createElement("div", { key: i, style: { borderLeft: `3px solid ${T.erro}`, paddingLeft: 12, fontSize: 13.5 } },
                 React.createElement("div", { style: { fontWeight: 700 } },
@@ -19777,8 +19852,8 @@ function ResultadoRedacao({ r, compacto }) {
                 React.createElement("div", { style: { color: T.muted, marginTop: 2 } }, e.explicacao),
                 React.createElement("div", { style: { color: T.accent2, marginTop: 2, fontWeight: 600 } },
                     "Sugest\u00E3o: ",
-                    e.sugestao))))))),
-        ((_c = r.comoMelhorar) === null || _c === void 0 ? void 0 : _c.length) > 0 && (React.createElement("div", null,
+                    e.sugestao))))))) : (compacto ? null : React.createElement("div", { style: { marginBottom: 16, fontSize: 13.5, color: T.muted } }, "A IA não apontou erros específicos legíveis nesta imagem.")),
+        ((_d = r.comoMelhorar) === null || _d === void 0 ? void 0 : _d.length) > 0 && (React.createElement("div", null,
             React.createElement("div", { style: { fontWeight: 800, fontSize: 12.5, color: T.ink, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.3 } }, "Como melhorar"),
             React.createElement("ul", { style: { margin: 0, paddingLeft: 18, fontSize: 13.5, lineHeight: 1.6 } }, r.comoMelhorar.map((p, i) => React.createElement("li", { key: i }, p)))))));
 }
