@@ -18212,12 +18212,402 @@ function ProfessorApp({ user, onLogout }) {
                         onClick: () => { setSecao("calendario"); setTurmaAtivaId(null); setCriando(false); }
                     },
                     {
+                        label: "Questões com IA", icon: Sparkles, ativa: secao === "questoes",
+                        onClick: () => { setSecao("questoes"); setTurmaAtivaId(null); setCriando(false); }
+                    },
+                    {
                         label: "Redações dos alunos", icon: PenLine, ativa: secao === "redacoes",
                         onClick: () => { setSecao("redacoes"); setTurmaAtivaId(null); setCriando(false); }
                     }
                 ] }),
-            React.createElement("div", { className: "conteudo-principal", style: { flex: 1, padding: "28px 32px", maxWidth: 900 } }, secao === "calendario" ? (React.createElement(CalendarioView, { user: user, podeAdicionar: true, turmasProfessor: minhas })) : secao === "redacoes" ? (React.createElement(RedacoesProfessor, null)) : criando ? (React.createElement(NovaTurmaForm, { onCriar: criarTurma, onCancelar: () => setCriando(false) })) : turmaAtiva ? (React.createElement(TurmaEditor, { key: turmaAtiva.id, turma: turmaAtiva, aba: aba, setAba: setAba, atualizar: (fn) => atualizarTurma(turmaAtiva.id, fn), professor: user.nome })) : (React.createElement(RegistrarAssunto, { nome: user.nome, turmas: minhas, atualizar: atualizarTurma, onCriarTurma: () => setCriando(true), onAbrirTurma: (id) => { setTurmaAtivaId(id); setAba("conteudos"); setCriando(false); setSecao("turmas"); } }))))));
+            React.createElement("div", { className: "conteudo-principal", style: { flex: 1, padding: "28px 32px", maxWidth: 900 } }, secao === "calendario" ? (React.createElement(CalendarioView, { user: user, podeAdicionar: true, turmasProfessor: minhas })) : secao === "questoes" ? (React.createElement(QuestoesIA, { user: user, turmas: minhas, atualizar: atualizarTurma })) : secao === "redacoes" ? (React.createElement(RedacoesProfessor, null)) : criando ? (React.createElement(NovaTurmaForm, { onCriar: criarTurma, onCancelar: () => setCriando(false) })) : turmaAtiva ? (React.createElement(TurmaEditor, { key: turmaAtiva.id, turma: turmaAtiva, aba: aba, setAba: setAba, atualizar: (fn) => atualizarTurma(turmaAtiva.id, fn), professor: user.nome })) : (React.createElement(RegistrarAssunto, { nome: user.nome, turmas: minhas, atualizar: atualizarTurma, onCriarTurma: () => setCriando(true), onAbrirTurma: (id) => { setTurmaAtivaId(id); setAba("conteudos"); setCriando(false); setSecao("turmas"); } }))))));
 }
+/* ---------------------------------------------------------
+   Gerador de questões com IA (painel do professor)
+   O professor descreve o que quer, a IA monta as questões e
+   ele baixa (Word), imprime/salva em PDF ou envia à turma.
+--------------------------------------------------------- */
+const Sparkles = mkIcon('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>');
+const Download = mkIcon('<path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 21h16"/>');
+const TIPOS_QUESTAO = [
+    { id: "multipla", nome: "Múltipla escolha (A a E)" },
+    { id: "dissertativa", nome: "Dissertativas" },
+    { id: "vf", nome: "Verdadeiro ou falso" },
+    { id: "misto", nome: "Misto" }
+];
+const NIVEIS_QUESTAO = ["Fácil", "Médio", "Difícil", "Variado"];
+function escHtml(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function escBr(s) { return escHtml(s).replace(/\r?\n/g, "<br>"); }
+function nomeArquivoSeguro(s) {
+    return String(s || "questoes").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "questoes";
+}
+function montarDocumentoQuestoes(dados, cfg, tipoDoc) {
+    const gab = tipoDoc === "gabarito";
+    const titulo = dados.titulo || "Lista de questões";
+    const letras = ["A", "B", "C", "D", "E", "F"];
+    let corpo = "";
+    (dados.questoes || []).forEach((q, i) => {
+        const n = i + 1;
+        if (gab) {
+            corpo += `<div class="gq"><b>Questão ${n}</b> &mdash; <b>${escBr(q.resposta)}</b>${q.explicacao ? `<div class="expl">${escBr(q.explicacao)}</div>` : ""}</div>`;
+            return;
+        }
+        let alt = "";
+        if (q.tipo === "dissertativa") {
+            alt = '<div class="linha"></div>'.repeat(5);
+        }
+        else if (q.tipo === "vf") {
+            alt = (q.alternativas || []).map(a => `<div class="alt">(&nbsp;&nbsp;&nbsp;) ${escBr(a)}</div>`).join("");
+        }
+        else {
+            alt = (q.alternativas || []).map((a, k) => `<div class="alt"><b>${letras[k]})</b> ${escBr(a)}</div>`).join("");
+        }
+        corpo += `<div class="q"><div class="en"><b>${n}.</b> ${escBr(q.enunciado)}</div>${alt}</div>`;
+    });
+    const cabecalho = gab
+        ? `<div class="topo">Caderno de Turma</div><h1>${escHtml(titulo)}</h1><div class="sub">Gabarito comentado &middot; uso exclusivo do professor</div>`
+        : `<div class="topo">Caderno de Turma</div><h1>${escHtml(titulo)}</h1>
+<table class="cab">
+<tr><td><b>Professor(a):</b> ${escHtml(cfg.professor)}</td><td><b>Disciplina:</b> ${escHtml(cfg.disciplina)}</td><td><b>Série/Turma:</b> ${escHtml(cfg.turma || cfg.serie)}</td></tr>
+<tr><td colspan="2"><b>Aluno(a):</b> ______________________________________</td><td><b>Data:</b> ___/___/______</td></tr>
+</table>`;
+    const css = `@page { size: A4; margin: 2cm; }
+body { font-family: "Times New Roman", Georgia, serif; font-size: 12pt; line-height: 1.45; color: #000; }
+.topo { text-align: center; font-size: 9pt; letter-spacing: 2px; text-transform: uppercase; color: #444; }
+h1 { text-align: center; font-size: 17pt; margin: 4px 0 12px; }
+.sub { text-align: center; color: #444; margin-bottom: 16px; }
+table.cab { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+table.cab td { border: 1px solid #000; padding: 6px 8px; font-size: 11pt; }
+.q { margin: 0 0 16px; page-break-inside: avoid; }
+.en { margin-bottom: 6px; text-align: justify; }
+.alt { margin: 2px 0 2px 18px; text-align: justify; }
+.linha { border-bottom: 1px solid #555; height: 22px; margin-left: 4px; }
+.gq { margin-bottom: 10px; }
+.expl { margin-left: 14px; color: #333; font-size: 11pt; text-align: justify; }`;
+    return '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>'
+        + escHtml(titulo) + "</title><style>" + css + "</style></head><body>" + cabecalho + corpo + "</body></html>";
+}
+function baixarArquivoTexto(nome, conteudo, mime) {
+    const blob = new Blob(["\ufeff", conteudo], { type: mime });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+function mensagemErroIA(e) {
+    const msg = (e && e.message) || "";
+    if ((e && e.name === "TypeError") || /failed to fetch|networkerror|load failed|network request failed/i.test(msg))
+        return "Não consegui falar com o serviço de IA do Google (falha de conexão). Confira a internet deste computador e se algum antivírus, firewall, bloqueador de anúncios ou a rede da escola está bloqueando o endereço generativelanguage.googleapis.com. Depois tente de novo.";
+    if (/503|overloaded|unavailable|high demand/i.test(msg))
+        return "O serviço de IA está sobrecarregado neste momento. Aguarde alguns segundos e tente de novo.";
+    if (/quota|rate.?limit|resource.?exhausted|429/i.test(msg))
+        return "O limite gratuito de uso da IA foi atingido por agora. Espere um pouco e tente de novo.";
+    if (/no longer available|Nenhum modelo de IA/i.test(msg))
+        return "Nenhum modelo de IA disponível foi encontrado para a chave configurada. Avise a direção para conferir a chave do Gemini.";
+    if (/api.?key|authenticat|unauthorized|permission|401|403/i.test(msg))
+        return "A chave de IA configurada não é válida. Avise a direção da escola para corrigi-la.";
+    if (/JSON|Unexpected token|formato/i.test(msg))
+        return "Não consegui entender a resposta da IA. Tente gerar de novo (se persistir, peça menos questões por vez).";
+    if (e && e.name === "TypeError")
+        return "Não consegui conectar à IA agora. Verifique sua conexão com a internet e tente de novo.";
+    return "Não consegui gerar as questões agora. Tente novamente." + (msg ? " (Detalhe técnico: " + msg.slice(0, 160) + ")" : "");
+}
+async function chamarGeminiComRetentativa(corpo) {
+    let ultimo;
+    for (let t = 0; t < 3; t++) {
+        try {
+            return await chamarGemini(CHAVE_API_GEMINI, corpo);
+        }
+        catch (e) {
+            ultimo = e;
+            const transitorio = (e && e.name === "TypeError") || /failed to fetch|networkerror|load failed|503|overloaded|unavailable|high demand|internal error/i.test((e && e.message) || "");
+            if (!transitorio)
+                throw e;
+            await new Promise(r => setTimeout(r, 1500 * (t + 1)));
+        }
+    }
+    throw ultimo;
+}
+function QuestoesIA({ user, turmas, atualizar }) {
+    const h = React.createElement;
+    const [turmaId, setTurmaId] = useState("");
+    const [disciplina, setDisciplina] = useState("");
+    const [serie, setSerie] = useState("");
+    const [pedido, setPedido] = useState("");
+    const [qtd, setQtd] = useState(5);
+    const [tipo, setTipo] = useState("multipla");
+    const [nivel, setNivel] = useState("Variado");
+    const [gerando, setGerando] = useState(false);
+    const [erro, setErro] = useState("");
+    const [dados, setDados] = useState(null);
+    const [ajuste, setAjuste] = useState("");
+    const [enviado, setEnviado] = useState("");
+    const [mostrarGab, setMostrarGab] = useState(true);
+    const turma = turmas.find(t => t.id === turmaId) || null;
+    useEffect(() => {
+        (async () => {
+            const r = await getPersonal("questoes-ia-rascunho", null);
+            if (r && r.dados) {
+                setDados(r.dados);
+                setDisciplina(r.disciplina || "");
+                setSerie(r.serie || "");
+                setPedido(r.pedido || "");
+            }
+        })();
+    }, []);
+    function guardar(novo) {
+        setDados(novo);
+        setPersonal("questoes-ia-rascunho", { dados: novo, disciplina, serie, pedido });
+    }
+    function escolherTurma(id) {
+        setTurmaId(id);
+        setEnviado("");
+        const t = turmas.find(x => x.id === id);
+        if (t) {
+            setDisciplina(t.materia || "");
+            setSerie(t.serie || "");
+        }
+    }
+    const cfg = { professor: user.nome, disciplina: disciplina || "—", serie: serie, turma: turma ? turma.nome + (turma.serie ? " · " + turma.serie : "") : serie };
+    async function gerar(refinar) {
+        if (!refinar && !pedido.trim()) {
+            setErro("Escreva o que você quer nas questões (assunto, foco, tipo de cobrança…).");
+            return;
+        }
+        if (refinar && !ajuste.trim()) {
+            setErro("Escreva o ajuste que você quer fazer.");
+            return;
+        }
+        setGerando(true);
+        setErro("");
+        setEnviado("");
+        try {
+            const nomeTipo = { multipla: "múltipla escolha com 5 alternativas (A a E)", dissertativa: "dissertativas (respostas escritas)", vf: "verdadeiro ou falso (cada questão com 4 a 5 afirmativas para julgar)", misto: "uma mistura equilibrada de múltipla escolha, verdadeiro/falso e dissertativas" }[tipo];
+            const formato = `Responda SOMENTE com um objeto JSON válido, sem markdown, sem crases e sem texto antes ou depois, neste formato:
+{
+  "titulo": "título curto e profissional da lista/avaliação",
+  "questoes": [
+    {
+      "tipo": "multipla" | "dissertativa" | "vf",
+      "enunciado": "texto completo da questão",
+      "alternativas": ["texto da alternativa A", "B", "C", "D", "E"],
+      "resposta": "multipla: apenas a letra correta (ex: C). vf: sequência como V, F, V, F. dissertativa: resposta esperada e critérios de correção.",
+      "explicacao": "justificativa curta e correta do gabarito"
+    }
+  ]
+}
+Para "dissertativa" use "alternativas": []. Para "multipla" use exatamente 5 alternativas, SEM prefixos como "A)" no texto. Para "vf" use as afirmativas em "alternativas", SEM prefixos.`;
+            const regras = `Regras de qualidade:
+- Enunciados claros, sem ambiguidade, com linguagem adequada à série e alinhados à BNCC (padrão ENEM no Ensino Médio).
+- Múltipla escolha: apenas UMA alternativa correta, distratores plausíveis baseados em erros comuns, sem "todas as anteriores"; varie a posição da resposta correta.
+- Conteúdo factualmente correto e verificável. Em Matemática/Física/Química confira os cálculos antes de definir o gabarito.
+- Não dependa de imagens, gráficos ou tabelas desenhadas; se precisar de dados, descreva-os em texto. Escreva fórmulas em texto simples/unicode (x², √, ½), sem LaTeX.
+- Escreva tudo em português do Brasil.`;
+            const semPrefixo = (x) => String(x || "").replace(/^\s*(\(?[A-Ea-e]\)|[A-Ea-e][\)\.\-:])\s+/, "").trim();
+            async function lote(n, jaFeitas) {
+                let prompt;
+                if (refinar && dados) {
+                    prompt = `Você é um professor experiente e elaborador de avaliações da educação básica brasileira.
+Abaixo está uma lista de questões (JSON) de ${disciplina || "uma disciplina"}${serie ? " para " + serie : ""}. Aplique o ajuste pedido pelo professor e devolva a lista COMPLETA atualizada.
+Ajuste pedido: """${ajuste.trim()}"""
+Lista atual:
+${JSON.stringify({ titulo: dados.titulo, questoes: dados.questoes })}
+
+${regras}
+${formato}`;
+                }
+                else {
+                    const evitar = jaFeitas.length ? `\nO professor já tem as questões abaixo nesta lista. NÃO repita os mesmos enunciados nem situações:\n` + jaFeitas.map((q, k) => `${k + 1}. ${String(q.enunciado).slice(0, 140)}`).join("\n") + "\n" : "";
+                    prompt = `Você é um professor experiente e elaborador de avaliações da educação básica brasileira.
+Crie questões de ${disciplina || "acordo com o pedido"}${serie ? " para a turma " + serie : ""}.
+Pedido do professor: """${pedido.trim()}"""
+Quantidade: exatamente ${n} questões. Tipo: ${nomeTipo}. Nível de dificuldade: ${nivel === "Variado" ? "variado (fáceis, médias e difíceis, em ordem crescente)" : nivel.toLowerCase()}.
+Se o pedido for vago, assuma o conteúdo mais comum e relevante para a série.
+${evitar}
+${regras}
+${formato}`;
+                }
+                const data = await chamarGeminiComRetentativa({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { responseMimeType: "application/json", maxOutputTokens: refinar ? 12000 : 8192 }
+                });
+                const cand = data.candidates && data.candidates[0];
+                const partes = cand && cand.content && cand.content.parts;
+                const texto = Array.isArray(partes) ? partes.filter(p => !p.thought).map(p => p.text || "").join("\n") : "";
+                if (!texto.trim())
+                    throw new Error("A IA não retornou nenhum conteúdo (resposta vazia)");
+                let limpo = texto.replace(/```json|```/g, "").trim();
+                const ini = limpo.indexOf("{"), fim = limpo.lastIndexOf("}");
+                if (ini !== -1 && fim > ini)
+                    limpo = limpo.slice(ini, fim + 1);
+                const parsed = JSON.parse(limpo);
+                if (!parsed || !Array.isArray(parsed.questoes) || parsed.questoes.length === 0)
+                    throw new Error("formato inesperado");
+                const qs = parsed.questoes.map(q => {
+                    const t = ["multipla", "dissertativa", "vf"].includes(q.tipo) ? q.tipo : (Array.isArray(q.alternativas) && q.alternativas.length ? "multipla" : "dissertativa");
+                    return {
+                        tipo: t,
+                        enunciado: String(q.enunciado || "").trim(),
+                        alternativas: t === "dissertativa" ? [] : (Array.isArray(q.alternativas) ? q.alternativas.map(semPrefixo) : []),
+                        resposta: String(q.resposta || "").trim(),
+                        explicacao: String(q.explicacao || "").trim()
+                    };
+                }).filter(q => q.enunciado);
+                if (!qs.length)
+                    throw new Error("formato inesperado");
+                return { titulo: String(parsed.titulo || "").trim(), questoes: qs };
+            }
+            let tituloNovo = "";
+            let questoes = [];
+            if (refinar) {
+                const r = await lote(0, []);
+                tituloNovo = r.titulo;
+                questoes = r.questoes;
+            }
+            else {
+                let falta = qtd;
+                while (falta > 0) {
+                    const n = Math.min(8, falta);
+                    const r = await lote(n, questoes);
+                    if (!tituloNovo)
+                        tituloNovo = r.titulo;
+                    questoes = questoes.concat(r.questoes);
+                    falta -= n;
+                }
+            }
+            const novo = { titulo: String(tituloNovo || (dados && dados.titulo) || "Lista de questões").trim(), questoes };
+            setDados(novo);
+            setPersonal("questoes-ia-rascunho", { dados: novo, disciplina, serie, pedido });
+            if (refinar)
+                setAjuste("");
+        }
+        catch (e) {
+            console.error("[Caderno de Turma] Erro ao gerar questões:", e);
+            setErro(mensagemErroIA(e));
+        }
+        finally {
+            setGerando(false);
+        }
+    }
+    const baseNome = nomeArquivoSeguro(dados && dados.titulo);
+    function baixar(tipoDoc) {
+        const html = montarDocumentoQuestoes(dados, cfg, tipoDoc);
+        baixarArquivoTexto(`${baseNome}${tipoDoc === "gabarito" ? "-gabarito" : ""}.doc`, html, "application/msword");
+    }
+    function imprimir() {
+        const w = window.open("", "_blank");
+        if (!w) {
+            setErro("O navegador bloqueou a janela de impressão. Libere pop-ups para esta página ou use o botão de baixar.");
+            return;
+        }
+        w.document.open();
+        w.document.write(montarDocumentoQuestoes(dados, cfg, "prova"));
+        w.document.close();
+        w.focus();
+        setTimeout(() => { try { w.print(); } catch (e) { } }, 400);
+    }
+    function enviarParaTurma() {
+        if (!turma) {
+            setErro("Escolha a turma no campo \"Turma\" lá em cima para enviar aos alunos.");
+            return;
+        }
+        setErro("");
+        const html = montarDocumentoQuestoes(dados, cfg, "prova");
+        const reader = new FileReader();
+        reader.onload = async () => {
+            await atualizar(turma.id, t => ({
+                ...t,
+                conteudos: [...(t.conteudos || []), {
+                        id: uid(), titulo: dados.titulo,
+                        descricao: `Lista com ${dados.questoes.length} questão(ões), elaborada pelo professor.`,
+                        data: hojeFmt(), dataEntrega: "", arquivoNome: baseNome + ".doc", arquivoDataUrl: reader.result
+                    }]
+            }));
+            setEnviado(turma.nome);
+            celebrar(null);
+        };
+        reader.readAsDataURL(new Blob(["\ufeff", html], { type: "application/msword" }));
+    }
+    function remover(i) {
+        guardar({ ...dados, questoes: dados.questoes.filter((_, k) => k !== i) });
+    }
+    const secaoBox = { background: T.card, border: `1px solid ${T.line}`, borderRadius: 4, padding: 18, marginBottom: 20 };
+    const linha2 = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 };
+    const letras = ["A", "B", "C", "D", "E", "F"];
+    return (h("div", { style: { maxWidth: 780 } },
+        h("h2", { style: { fontFamily: T.serif, fontSize: 26, margin: "0 0 4px" } }, "Questões com IA"),
+        h("p", { style: { color: T.muted, fontSize: 13.5, marginBottom: 22, maxWidth: 620, lineHeight: 1.55 } }, "Diga o que você precisa e a IA elabora as questões com gabarito. Revise, ajuste se quiser e então baixe, imprima ou envie direto para a turma."),
+        h("div", { style: secaoBox },
+            h("div", { style: linha2 },
+                h(Field, { label: "Turma (opcional, para enviar aos alunos)" },
+                    h("select", { value: turmaId, onChange: e => escolherTurma(e.target.value), style: inputStyle },
+                        h("option", { value: "" }, "Sem turma definida"),
+                        turmas.map(t => h("option", { key: t.id, value: t.id }, (String(t.nome).includes(t.materia) ? t.nome : `${t.nome} — ${t.materia}`) + (t.serie ? ` · ${t.serie}` : ""))))),
+                h(Field, { label: "Disciplina" },
+                    h("select", { value: disciplina, onChange: e => setDisciplina(e.target.value), style: inputStyle },
+                        h("option", { value: "" }, "Escolha…"),
+                        MATERIAS.map(m => h("option", { key: m, value: m }, m)))),
+                h(Field, { label: "Série" },
+                    h("select", { value: serie, onChange: e => setSerie(e.target.value), style: inputStyle },
+                        h("option", { value: "" }, "Escolha…"),
+                        SERIES.map(s => h("option", { key: s, value: s }, s))))),
+            h(Field, { label: "O que a IA deve fazer? (assunto, foco, estilo de cobrança…)" },
+                h("textarea", { value: pedido, onChange: e => { setPedido(e.target.value); setErro(""); }, placeholder: "Ex: Questões sobre equações do 2º grau, com problemas do cotidiano e pelo menos uma que use a fórmula de Bhaskara. Estilo ENEM.", style: { ...inputStyle, minHeight: 96, resize: "vertical", lineHeight: 1.5 } })),
+            h("div", { style: linha2 },
+                h(Field, { label: "Quantidade" },
+                    h("select", { value: qtd, onChange: e => setQtd(parseInt(e.target.value, 10)), style: inputStyle }, [3, 5, 8, 10, 12, 15, 20].map(n => h("option", { key: n, value: n }, n + " questões")))),
+                h(Field, { label: "Tipo" },
+                    h("select", { value: tipo, onChange: e => setTipo(e.target.value), style: inputStyle }, TIPOS_QUESTAO.map(t => h("option", { key: t.id, value: t.id }, t.nome)))),
+                h(Field, { label: "Dificuldade" },
+                    h("select", { value: nivel, onChange: e => setNivel(e.target.value), style: inputStyle }, NIVEIS_QUESTAO.map(n => h("option", { key: n, value: n }, n))))),
+            erro && h("div", { style: { color: T.erro, fontSize: 13, margin: "4px 0 10px" } }, erro),
+            h("button", { onClick: () => gerar(false), disabled: gerando, style: { ...btnPrimary, opacity: gerando ? 0.6 : 1 } },
+                gerando ? h(Loader2, { className: "spin", size: 15, style: { marginRight: 8, verticalAlign: -3 } }) : h(Sparkles, { size: 15, style: { marginRight: 8, verticalAlign: -3 } }),
+                gerando ? "Elaborando as questões…" : (dados ? "Gerar novas questões" : "Gerar questões"))),
+        dados && (h("div", null,
+            h("div", { style: { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14, alignItems: "center" } },
+                h("button", { onClick: () => baixar("prova"), style: btnPrimary },
+                    h(Download, { size: 15, style: { marginRight: 6, verticalAlign: -3 } }), "Baixar prova (Word)"),
+                h("button", { onClick: () => baixar("gabarito"), style: btnGhost }, "Baixar gabarito"),
+                h("button", { onClick: imprimir, style: btnGhost },
+                    h(FileText, { size: 15, style: { marginRight: 6, verticalAlign: -3 } }), "Imprimir / salvar em PDF"),
+                h("button", { onClick: enviarParaTurma, style: { ...btnGhost, borderColor: T.accent2, color: T.accent2 } },
+                    h(Send, { size: 15, style: { marginRight: 6, verticalAlign: -3 } }), turma ? `Enviar para ${turma.nome}` : "Enviar para a turma")),
+            enviado && (h("div", { className: "pop", style: { background: "#E6F4EA", border: "1px solid #8CC9A0", color: "#1E6B3A", borderRadius: 4, padding: 10, fontSize: 13, marginBottom: 14 } },
+                "Prova enviada para a turma ", h("strong", null, enviado), ". Os alunos a veem na aba Conteúdos (sem o gabarito).")),
+            h("div", { style: { background: "#fff", border: `1px solid ${T.line}`, borderRadius: 4, padding: "28px 32px", boxShadow: "0 2px 10px rgba(30,42,56,0.06)" } },
+                h("div", { style: { textAlign: "center", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: T.muted } }, "Caderno de Turma"),
+                h("input", { value: dados.titulo, onChange: e => guardar({ ...dados, titulo: e.target.value }), style: { width: "100%", border: "none", borderBottom: `1px dashed ${T.line}`, background: "transparent", textAlign: "center", fontFamily: T.serif, fontSize: 22, fontWeight: 700, margin: "6px 0 16px", padding: "4px 0", outline: "none" } }),
+                h("div", { style: { display: "flex", flexWrap: "wrap", gap: 18, fontSize: 12.5, color: T.muted, borderTop: `1px solid ${T.ink}`, borderBottom: `1px solid ${T.ink}`, padding: "8px 0", marginBottom: 22 } },
+                    h("span", null, h("strong", null, "Professor(a): "), user.nome),
+                    disciplina && h("span", null, h("strong", null, "Disciplina: "), disciplina),
+                    (turma || serie) && h("span", null, h("strong", null, "Turma: "), cfg.turma)),
+                dados.questoes.map((q, i) => (h("div", { key: i, style: { marginBottom: 22, paddingBottom: 18, borderBottom: i === dados.questoes.length - 1 ? "none" : `1px solid ${T.paperAlt}` } },
+                    h("div", { style: { display: "flex", gap: 10, alignItems: "flex-start" } },
+                        h("div", { style: { flex: 1, fontFamily: T.serif, fontSize: 15.5, lineHeight: 1.55, whiteSpace: "pre-wrap" } }, h("strong", null, (i + 1) + ". "), q.enunciado),
+                        h("button", { onClick: () => remover(i), title: "Remover esta questão", style: iconBtnGhost }, h(Trash2, { size: 14 }))),
+                    q.tipo === "dissertativa"
+                        ? h("div", { style: { margin: "10px 0 0 4px" } }, [0, 1, 2].map(k => h("div", { key: k, style: { borderBottom: `1px solid ${T.line}`, height: 22 } })))
+                        : h("div", { style: { margin: "8px 0 0 18px", display: "flex", flexDirection: "column", gap: 4 } }, q.alternativas.map((a, k) => h("div", { key: k, style: { fontFamily: T.serif, fontSize: 15, lineHeight: 1.5 } }, q.tipo === "vf" ? "(     ) " : h("strong", null, letras[k] + ") "), a))),
+                    mostrarGab && (h("div", { style: { marginTop: 10, background: "#EEF7F2", border: "1px solid #BFE0CE", borderRadius: 3, padding: "8px 10px", fontSize: 12.5, color: "#1E5E3E", lineHeight: 1.5 } },
+                        h("strong", null, "Gabarito: "), q.resposta,
+                        q.explicacao && h("div", { style: { marginTop: 3, color: "#2F6F52" } }, q.explicacao))))))),
+            h("div", { style: { display: "flex", alignItems: "center", gap: 14, margin: "12px 0 20px", flexWrap: "wrap" } },
+                h("label", { style: { fontSize: 12.5, color: T.muted, display: "flex", alignItems: "center", gap: 6 } },
+                    h("input", { type: "checkbox", checked: mostrarGab, onChange: e => setMostrarGab(e.target.checked) }), "Mostrar gabarito nesta tela"),
+                h("span", { style: { fontSize: 12, color: T.muted } }, "Revise sempre as questões e o gabarito antes de aplicar: a IA pode errar.")),
+            h("div", { style: secaoBox },
+                h(Field, { label: "Quer mudar algo? Peça um ajuste e a IA refaz a lista" },
+                    h("textarea", { value: ajuste, onChange: e => { setAjuste(e.target.value); setErro(""); }, placeholder: "Ex: Deixe as questões 2 e 3 mais difíceis, troque o contexto da questão 1 por algo do esporte e acrescente uma questão sobre juros.", style: { ...inputStyle, minHeight: 70, resize: "vertical", lineHeight: 1.5 } })),
+                h("button", { onClick: () => gerar(true), disabled: gerando, style: { ...btnGhost, opacity: gerando ? 0.6 : 1 } },
+                    gerando && h(Loader2, { className: "spin", size: 15, style: { marginRight: 8, verticalAlign: -3 } }), "Aplicar ajuste"))))));
+}
+
 function RegistrarAssunto({ nome, turmas, atualizar, onCriarTurma, onAbrirTurma }) {
     const [turmaId, setTurmaId] = useState("");
     const [assunto, setAssunto] = useState("");
