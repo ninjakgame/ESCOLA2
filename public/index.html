@@ -17623,8 +17623,85 @@ function GlobalStyle() {
       ::-webkit-scrollbar-thumb { background: #d8cfb8; border-radius: 8px; }
       button { font-family: inherit; cursor: pointer; }
       input, textarea, select { font-family: inherit; }
+
+      html { scroll-behavior: smooth; }
+      @keyframes entrar { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+      @keyframes pop { 0% { opacity: 0; transform: scale(.92); } 60% { transform: scale(1.03); } 100% { opacity: 1; transform: scale(1); } }
+      @keyframes tremer { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-7px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
+      @keyframes fundo { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+      @keyframes flutuar { 0%,100% { transform: translateY(0) rotate(var(--giro, 0deg)); } 50% { transform: translateY(-22px) rotate(calc(var(--giro, 0deg) + 8deg)); } }
+      @keyframes acenar { 0%,60%,100% { transform: rotate(0); } 10%,30% { transform: rotate(16deg); } 20%,40% { transform: rotate(-10deg); } 50% { transform: rotate(8deg); } }
+      @keyframes onda { to { transform: scale(3.2); opacity: 0; } }
+      @keyframes confete { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
+      button { position: relative; overflow: hidden; transition: transform .15s ease, box-shadow .2s ease, filter .2s ease; }
+      @media (hover: hover) { button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 4px 12px rgba(30,42,56,.14); } }
+      button:active:not(:disabled) { transform: scale(.97); }
+      .ripple { position: absolute; border-radius: 50%; background: rgba(255,255,255,.45); width: 40px; height: 40px; margin: -20px 0 0 -20px; pointer-events: none; animation: onda .6s ease-out forwards; }
+      input, select, textarea { transition: border-color .2s ease, box-shadow .2s ease; }
+      input:focus, select:focus, textarea:focus { outline: none; border-color: #2F6FED !important; box-shadow: 0 0 0 4px rgba(47,111,237,.16); }
+      .conteudo-principal > * { animation: entrar .35s ease both; }
+      .item-card { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; animation: entrar .35s ease both; }
+      .item-card:nth-child(2) { animation-delay: .04s; } .item-card:nth-child(3) { animation-delay: .08s; } .item-card:nth-child(4) { animation-delay: .12s; }
+      .item-card:nth-child(5) { animation-delay: .16s; } .item-card:nth-child(6) { animation-delay: .2s; } .item-card:nth-child(n+7) { animation-delay: .24s; }
+      @media (hover: hover) { .item-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(30,42,56,.10); border-color: #2F6FED !important; } }
+      .side-turma { transition: background .2s ease, transform .2s ease; }
+      @media (hover: hover) { .side-turma:hover { background: rgba(255,255,255,.9) !important; transform: translateX(4px); } }
+      .pop { animation: pop .4s ease both; }
+      .tremer { animation: tremer .45s ease both; }
+      .mao { display: inline-block; transform-origin: 70% 70%; animation: acenar 2.4s ease .4s 2; }
+      .login-fundo { position: relative; overflow: hidden; background: linear-gradient(120deg, #E9F1FA, #CFE2FA, #DDF3EA, #E9F1FA); background-size: 300% 300%; animation: fundo 16s ease infinite; }
+      .flutua { position: absolute; font-size: 34px; opacity: .55; pointer-events: none; user-select: none; animation: flutuar 7s ease-in-out infinite; }
+      .login-card { position: relative; z-index: 1; animation: pop .55s cubic-bezier(.2,.9,.3,1.2) both; }
+      .logo-giro { transition: transform .4s ease; }
+      .login-card:hover .logo-giro { transform: rotate(-8deg) scale(1.08); }
       @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
     `));
+}
+// Chuva de confete (ao salvar algo importante). Respeita "reduzir movimento".
+function celebrar(origem) {
+    try {
+        if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+            return;
+        const r = origem && origem.getBoundingClientRect ? origem.getBoundingClientRect() : null;
+        const x = r ? r.left + r.width / 2 : window.innerWidth / 2;
+        const y = r ? r.top + r.height / 2 : window.innerHeight / 3;
+        const cores = ["#2F6FED", "#1F9D6B", "#F5B335", "#E85D75", "#8E5CF6"];
+        for (let i = 0; i < 28; i++) {
+            const p = document.createElement("div");
+            const ang = Math.random() * Math.PI * 2, dist = 70 + Math.random() * 120;
+            p.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:8px;height:12px;border-radius:2px;z-index:99998;pointer-events:none;background:${cores[i % cores.length]};--dx:${Math.cos(ang) * dist}px;--dy:${Math.sin(ang) * dist + 40}px;--rot:${Math.random() * 720 - 360}deg;animation:confete ${0.8 + Math.random() * 0.6}s ease-out forwards`;
+            document.body.appendChild(p);
+            setTimeout(() => p.remove(), 1600);
+        }
+    }
+    catch (e) { }
+}
+// Onda de luz no ponto onde o botão foi clicado
+if (!window.__efeitoOnda) {
+    window.__efeitoOnda = true;
+    document.addEventListener("click", (e) => {
+        const b = e.target && e.target.closest ? e.target.closest("button") : null;
+        if (!b || b.disabled)
+            return;
+        const r = b.getBoundingClientRect();
+        const s = document.createElement("span");
+        s.className = "ripple";
+        s.style.left = (e.clientX - r.left) + "px";
+        s.style.top = (e.clientY - r.top) + "px";
+        b.appendChild(s);
+        setTimeout(() => s.remove(), 650);
+    });
+}
+function Saudacao({ nome }) {
+    const h = new Date().getHours();
+    const periodo = h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+    const primeiro = String(nome || "").split(" ")[0];
+    return React.createElement("div", { style: { fontFamily: T.serif, fontSize: 22, marginBottom: 14 } }, periodo + ", " + primeiro + "! ", React.createElement("span", { className: "mao" }, "\uD83D\uDC4B"));
+}
+function AlunoInicio({ nome }) {
+    return React.createElement(React.Fragment, null,
+        React.createElement(Saudacao, { nome: nome }),
+        React.createElement(EmptyState, { icon: ClipboardList, titulo: "Escolha uma turma", texto: "Selecione uma turma na lista ao lado para abrir a p\u00E1gina dela, com conte\u00FAdos, livros, simulados, provas, reuni\u00F5es e o chat com o professor." }));
 }
 /* ---------------------------------------------------------
    Estilos (tokens)
@@ -17664,6 +17741,7 @@ function Login({ onLogin }) {
     const [erro, setErro] = useState("");
     const [mostrarSenha, setMostrarSenha] = useState(false);
     const [confirmandoReset, setConfirmandoReset] = useState(false);
+    const [entrando, setEntrando] = useState(false);
     useEffect(() => {
         (async () => {
             let cfg = await getShared("diretor-config", null);
@@ -17685,9 +17763,20 @@ function Login({ onLogin }) {
         setConfirmandoReset(false);
     }
     async function entrar() {
+        if (entrando)
+            return;
+        setEntrando(true);
+        try {
+            await entrarInterno();
+        }
+        finally {
+            setEntrando(false);
+        }
+    }
+    async function entrarInterno() {
         setErro("");
         if (!usuario.trim() || !senha.trim()) {
-            setErro("Preencha o usuário (ou matrícula) e a senha.");
+            setErro("Preencha o seu nome (ou matrícula) e a senha.");
             return;
         }
         const senhaDiretorOk = !!diretorConfig && senha === diretorConfig.senha;
@@ -17700,7 +17789,10 @@ function Login({ onLogin }) {
             return;
         }
         const usuarios = await getShared("usuarios", []);
-        const encontrado = usuarios.find(u => String(u.matricula || "").toLowerCase() === usuario.trim().toLowerCase() && u.senha === senha.trim());
+        // Entra pelo nome cadastrado pela direção (sem diferenciar maiúsculas/acentos) ou pela matrícula
+        const normNome = (t) => semAcento(t).replace(/\s+/g, " ");
+        const alvo = normNome(usuario);
+        const encontrado = usuarios.find(u => u.senha === senha.trim() && (normNome(u.matricula) === alvo || normNome(u.nome) === alvo));
         if (encontrado) {
             onLogin({
                 nome: encontrado.nome, papel: encontrado.tipo, matricula: encontrado.matricula,
@@ -17713,17 +17805,18 @@ function Login({ onLogin }) {
             onLogin({ nome: diretorConfig.nome, papel: "diretor" });
             return;
         }
-        setErro("Usuário ou senha incorretos. Procure a direção da escola.");
+        setErro("Nome ou senha incorretos. Digite o nome exatamente como a direção cadastrou e confira a senha.");
     }
-    return (React.createElement("div", { style: {
+    return (React.createElement("div", { className: "login-fundo", style: {
             minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20
         } },
-        React.createElement("div", { style: {
+        [["\uD83D\uDCDA", "8%", "14%", "0s", "-10deg"], ["\u270F\uFE0F", "82%", "12%", "1.2s", "12deg"], ["\uD83C\uDF93", "12%", "72%", "2.1s", "-6deg"], ["\uD83D\uDCD0", "86%", "68%", "0.7s", "10deg"], ["\uD83D\uDD2C", "48%", "6%", "1.8s", "0deg"], ["\uD83C\uDF0D", "52%", "86%", "2.8s", "8deg"], ["\u2B50", "28%", "38%", "3.4s", "0deg"]].map(([ic, esq, topo, atraso, giro], i) => React.createElement("span", { key: i, className: "flutua", style: { left: esq, top: topo, animationDelay: atraso, "--giro": giro } }, ic)),
+        React.createElement("div", { className: "login-card", style: {
                 width: "100%", maxWidth: 420, background: T.card, border: `1px solid ${T.line}`,
                 borderRadius: 4, padding: "40px 36px", boxShadow: "0 1px 0 rgba(0,0,0,0.04)"
             } },
             React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6 } },
-                React.createElement("div", { style: {
+                React.createElement("div", { className: "logo-giro", style: {
                         width: 34, height: 34, borderRadius: 3, background: T.ink,
                         display: "flex", alignItems: "center", justifyContent: "center"
                     } },
@@ -17732,8 +17825,8 @@ function Login({ onLogin }) {
             React.createElement("h1", { style: { fontFamily: T.serif, fontWeight: 700, fontSize: 30, margin: "10px 0 4px", lineHeight: 1.15 } }, "Entrar na sala"),
             React.createElement("p", { style: { color: T.muted, margin: "0 0 28px", fontSize: 14.5 } }, "Agenda de aulas, atividades e corre\u00E7\u00E3o de reda\u00E7\u00E3o em um s\u00F3 lugar."),
             carregando ? (React.createElement("div", { style: { color: T.muted, fontSize: 13.5, padding: "10px 0" } }, "Carregando\u2026")) : (React.createElement(React.Fragment, null,
-                React.createElement(Field, { label: "Matr\u00EDcula ou usu\u00E1rio" },
-                    React.createElement("input", { value: usuario, onChange: e => { setUsuario(e.target.value); setErro(""); setConfirmandoReset(false); }, onKeyDown: e => e.key === "Enter" && entrar(), placeholder: "Digite sua matr\u00EDcula", autoComplete: "username", style: inputStyle })),
+                React.createElement(Field, { label: "Seu nome ou matr\u00EDcula" },
+                    React.createElement("input", { value: usuario, onChange: e => { setUsuario(e.target.value); setErro(""); setConfirmandoReset(false); }, onKeyDown: e => e.key === "Enter" && entrar(), placeholder: "Digite seu nome completo", autoComplete: "name", style: inputStyle })),
                 React.createElement(Field, { label: "Senha" },
                     React.createElement(SenhaInput, { value: senha, onChange: setSenha, onEnter: entrar, mostrar: mostrarSenha, setMostrar: setMostrarSenha })),
                 ehDiretor && (!confirmandoReset ? (React.createElement("button", { type: "button", onClick: () => setConfirmandoReset(true), style: {
@@ -17756,14 +17849,13 @@ function Login({ onLogin }) {
                         React.createElement("button", { type: "button", onClick: () => setConfirmandoReset(false), style: {
                                 border: "none", background: "transparent", color: "#8A5A12", fontWeight: 700, fontSize: 12
                             } }, "Cancelar"))))))),
-            erro && React.createElement("div", { style: { color: T.erro, fontSize: 13, margin: "2px 0 6px" } }, erro),
-            React.createElement("button", { onClick: entrar, style: {
+            erro && React.createElement("div", { key: erro, className: "tremer", style: { color: T.erro, fontSize: 13, margin: "2px 0 6px" } }, erro),
+            React.createElement("button", { onClick: entrar, disabled: entrando, style: {
                     width: "100%", marginTop: 16, padding: "13px 14px", borderRadius: 3, border: "none",
                     background: T.accent, color: "#fff", fontWeight: 800, fontSize: 15, letterSpacing: 0.2,
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 8
                 } },
-                "Entrar ",
-                React.createElement(ChevronRight, { size: 17 })),
+                entrando ? [React.createElement(Loader2, { key: "l", className: "spin", size: 17 }), " Entrando\u2026"] : ["Entrar ", React.createElement(ChevronRight, { key: "c", size: 17 })]),
             React.createElement("p", { style: { fontSize: 12, color: T.muted, marginTop: 16, textAlign: "center" } }, "Ainda n\u00E3o tem matr\u00EDcula? Fale com a dire\u00E7\u00E3o da escola para ser cadastrado."))));
 }
 function SenhaInput({ value, onChange, onEnter, mostrar, setMostrar }) {
@@ -17918,11 +18010,11 @@ function DiretorApp({ user, onLogout, onUpdateUser }) {
             React.createElement(Loader2, { className: "spin", size: 22 }));
     return (React.createElement("div", null,
         React.createElement(TopBar, { user: user, onLogout: onLogout, subtitle: "Painel da dire\u00E7\u00E3o" }),
-        React.createElement("div", { style: { padding: "28px 32px", maxWidth: 860, margin: "0 auto" } },
+        React.createElement("div", { className: "conteudo-principal", style: { padding: "28px 32px", maxWidth: 860, margin: "0 auto" } },
             React.createElement("h2", { style: { fontFamily: T.serif, fontSize: 27, margin: "2px 0 4px" } }, "Cadastro de acesso"),
             React.createElement(LinkCompartilhar, null),
             avisoSalvar && React.createElement("div", { style: { background: "#FBE7E7", border: `1px solid ${T.erro}`, color: T.erro, borderRadius: 4, padding: 12, fontSize: 13, marginBottom: 16, maxWidth: 560 } }, avisoSalvar),
-            React.createElement("p", { style: { color: T.muted, fontSize: 13.5, marginBottom: 22, maxWidth: 560 } }, "S\u00F3 a dire\u00E7\u00E3o pode cadastrar professores e alunos. Depois de cadastrado, entregue a matr\u00EDcula e a senha para a pessoa poder entrar no sistema."),
+            React.createElement("p", { style: { color: T.muted, fontSize: 13.5, marginBottom: 22, maxWidth: 560 } }, "S\u00F3 a dire\u00E7\u00E3o pode cadastrar professores e alunos. Depois de cadastrado, entregue a senha. A pessoa entra digitando o nome que voc\u00EA cadastrou (ou a matr\u00EDcula) e a senha."),
             React.createElement(Tabs, { abas: [
                     { k: "professores", label: `Professores (${professores.length})`, icon: Users },
                     { k: "alunos", label: `Alunos (${alunos.length})`, icon: GraduationCap },
@@ -17987,7 +18079,7 @@ function CredencialCard({ registro, onFechar }) {
     const [copiado, setCopiado] = useState(false);
     function copiar() {
         var _a;
-        const texto = `Matrícula: ${registro.matricula}\nSenha: ${registro.senha}`;
+        const texto = `Nome para entrar: ${registro.nome}\nMatrícula: ${registro.matricula}\nSenha: ${registro.senha}`;
         (_a = navigator.clipboard) === null || _a === void 0 ? void 0 : _a.writeText(texto).then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 1800); });
     }
     return (React.createElement("div", { style: {
@@ -17999,9 +18091,12 @@ function CredencialCard({ registro, onFechar }) {
                 registro.nome),
             React.createElement("button", { onClick: onFechar, style: { border: "none", background: "transparent", color: T.muted } },
                 React.createElement(X, { size: 16 }))),
+        React.createElement("div", { style: { marginBottom: 10 } },
+            React.createElement("div", { style: { fontSize: 11, color: T.muted, fontWeight: 700 } }, "NOME PARA ENTRAR"),
+            React.createElement("div", { style: { fontFamily: T.serif, fontSize: 20, fontWeight: 700 } }, registro.nome)),
         React.createElement("div", { style: { display: "flex", gap: 18, marginBottom: 10 } },
             React.createElement("div", null,
-                React.createElement("div", { style: { fontSize: 11, color: T.muted, fontWeight: 700 } }, "MATR\u00CDCULA"),
+                React.createElement("div", { style: { fontSize: 11, color: T.muted, fontWeight: 700 } }, "MATR\u00CDCULA (OPCIONAL)"),
                 React.createElement("div", { style: { fontFamily: T.serif, fontSize: 20, fontWeight: 700 } }, registro.matricula)),
             React.createElement("div", null,
                 React.createElement("div", { style: { fontSize: 11, color: T.muted, fontWeight: 700 } }, "SENHA"),
@@ -18086,6 +18181,7 @@ function ProfessorApp({ user, onLogout }) {
         const next = [...turmas, nova];
         await salvarTurmas(next);
         setTurmaAtivaId(nova.id);
+        celebrar(null);
         setCriando(false);
         setSecao("turmas");
         setAba("conteudos");
@@ -18120,9 +18216,9 @@ function ProfessorApp({ user, onLogout }) {
                         onClick: () => { setSecao("redacoes"); setTurmaAtivaId(null); setCriando(false); }
                     }
                 ] }),
-            React.createElement("div", { style: { flex: 1, padding: "28px 32px", maxWidth: 900 } }, secao === "calendario" ? (React.createElement(CalendarioView, { user: user, podeAdicionar: true, turmasProfessor: minhas })) : secao === "redacoes" ? (React.createElement(RedacoesProfessor, null)) : criando ? (React.createElement(NovaTurmaForm, { onCriar: criarTurma, onCancelar: () => setCriando(false) })) : turmaAtiva ? (React.createElement(TurmaEditor, { turma: turmaAtiva, aba: aba, setAba: setAba, atualizar: (fn) => atualizarTurma(turmaAtiva.id, fn), professor: user.nome })) : (React.createElement(RegistrarAssunto, { turmas: minhas, atualizar: atualizarTurma, onCriarTurma: () => setCriando(true), onAbrirTurma: (id) => { setTurmaAtivaId(id); setAba("conteudos"); setCriando(false); setSecao("turmas"); } }))))));
+            React.createElement("div", { className: "conteudo-principal", style: { flex: 1, padding: "28px 32px", maxWidth: 900 } }, secao === "calendario" ? (React.createElement(CalendarioView, { user: user, podeAdicionar: true, turmasProfessor: minhas })) : secao === "redacoes" ? (React.createElement(RedacoesProfessor, null)) : criando ? (React.createElement(NovaTurmaForm, { onCriar: criarTurma, onCancelar: () => setCriando(false) })) : turmaAtiva ? (React.createElement(TurmaEditor, { key: turmaAtiva.id, turma: turmaAtiva, aba: aba, setAba: setAba, atualizar: (fn) => atualizarTurma(turmaAtiva.id, fn), professor: user.nome })) : (React.createElement(RegistrarAssunto, { nome: user.nome, turmas: minhas, atualizar: atualizarTurma, onCriarTurma: () => setCriando(true), onAbrirTurma: (id) => { setTurmaAtivaId(id); setAba("conteudos"); setCriando(false); setSecao("turmas"); } }))))));
 }
-function RegistrarAssunto({ turmas, atualizar, onCriarTurma, onAbrirTurma }) {
+function RegistrarAssunto({ nome, turmas, atualizar, onCriarTurma, onAbrirTurma }) {
     const [turmaId, setTurmaId] = useState("");
     const [assunto, setAssunto] = useState("");
     const [descricao, setDescricao] = useState("");
@@ -18147,10 +18243,12 @@ function RegistrarAssunto({ turmas, atualizar, onCriarTurma, onAbrirTurma }) {
                 }]
         }));
         setSalvo({ id: turma.id, nome: turma.nome, assunto: assunto.trim() });
+        celebrar(document.activeElement);
         setAssunto("");
         setDescricao("");
     }
     return (React.createElement("div", { style: { maxWidth: 520 } },
+        React.createElement(Saudacao, { nome: nome }),
         React.createElement("h2", { style: { fontFamily: T.serif, fontSize: 26, margin: "0 0 4px" } }, "Registrar assunto da aula"),
         React.createElement("p", { style: { color: T.muted, fontSize: 13.5, marginBottom: 22 } }, "Escolha a turma e escreva o assunto dado. Os alunos dessa turma veem o assunto na aba Conte\u00FAdos."),
         turmas.length === 0 ? (React.createElement(EmptyState, { icon: ClipboardList, titulo: "Nenhuma turma dispon\u00EDvel", texto: "Voc\u00EA ainda n\u00E3o tem turmas. Crie uma turma para poder registrar assuntos.", acao: { label: "Criar turma", onClick: onCriarTurma } })) : (React.createElement("div", { style: { background: T.card, border: `1px solid ${T.line}`, borderRadius: 4, padding: 18 } },
@@ -18163,7 +18261,7 @@ function RegistrarAssunto({ turmas, atualizar, onCriarTurma, onAbrirTurma }) {
             React.createElement(Field, { label: "Descri\u00E7\u00E3o (opcional)" },
                 React.createElement("textarea", { value: descricao, onChange: e => setDescricao(e.target.value), placeholder: "O que foi trabalhado em aula", style: { ...inputStyle, minHeight: 70, resize: "vertical" } })),
             erro && React.createElement("div", { style: { color: T.erro, fontSize: 13, marginBottom: 8 } }, erro),
-            salvo && (React.createElement("div", { style: { background: "#E6F4EA", border: "1px solid #8CC9A0", color: "#1E6B3A", borderRadius: 4, padding: 10, fontSize: 13, marginBottom: 10 } },
+            salvo && (React.createElement("div", { key: salvo.assunto + salvo.id, className: "pop", style: { background: "#E6F4EA", border: "1px solid #8CC9A0", color: "#1E6B3A", borderRadius: 4, padding: 10, fontSize: 13, marginBottom: 10 } },
                 "Assunto \u201C", salvo.assunto, "\u201D registrado na turma ", React.createElement("strong", null, salvo.nome), ". ",
                 React.createElement("button", { type: "button", onClick: () => onAbrirTurma(salvo.id), style: { border: "none", background: "transparent", color: "#1E6B3A", textDecoration: "underline", fontWeight: 700, fontSize: 13, padding: 0 } }, "Abrir turma"))),
             React.createElement("button", { onClick: registrar, style: btnPrimary },
@@ -18171,7 +18269,7 @@ function RegistrarAssunto({ turmas, atualizar, onCriarTurma, onAbrirTurma }) {
                 "Registrar assunto"))),
             turma && (turma.conteudos || []).length > 0 && (React.createElement("div", { style: { marginTop: 20 } },
                 React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: T.muted, marginBottom: 8 } }, "\u00DAltimos assuntos desta turma"),
-                React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, [...turma.conteudos].slice(-5).reverse().map(c => (React.createElement("div", { key: c.id, style: itemCardStyle },
+                React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, [...turma.conteudos].slice(-5).reverse().map(c => (React.createElement("div", { key: c.id, className: "item-card", style: itemCardStyle },
                     React.createElement("div", { style: { flex: 1 } },
                         React.createElement("div", { style: { fontWeight: 700, fontSize: 14 } }, c.titulo),
                         React.createElement("div", { style: { fontSize: 11.5, color: T.muted, marginTop: 2 } }, "Registrado em ", c.data))))))))));
@@ -18200,7 +18298,7 @@ function SidebarTurmas({ titulo, turmas, ativaId, onSelect, onNova, onExcluir, e
                 React.createElement(Plus, { size: 15 })))),
         turmas.length === 0 && (React.createElement("div", { style: { fontSize: 13, color: T.muted, lineHeight: 1.5 } }, "Nenhuma turma ainda.")),
         React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, turmas.map(t => (React.createElement("div", { key: t.id },
-            React.createElement("div", { onClick: () => onSelect(t.id), style: {
+            React.createElement("div", { className: "side-turma", onClick: () => onSelect(t.id), style: {
                     padding: "10px 12px", borderRadius: 3, cursor: "pointer",
                     background: ativaId === t.id ? "#fff" : "transparent",
                     border: `1px solid ${ativaId === t.id ? T.line : "transparent"}`,
@@ -18363,7 +18461,7 @@ function ConteudosEditor({ turma, atualizar }) {
                 "Adicionar")),
         turma.conteudos.length === 0 ? (React.createElement(VazioLinha, { texto: "Nenhum conte\u00FAdo registrado ainda." })) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, [...turma.conteudos].reverse().map(c => {
             const prazo = diasRestantesInfo(c.dataEntrega);
-            return (React.createElement("div", { key: c.id, style: itemCardStyle },
+            return (React.createElement("div", { key: c.id, className: "item-card", style: itemCardStyle },
                 React.createElement("div", { style: { flex: 1 } },
                     React.createElement("div", { style: { fontWeight: 700, fontSize: 14 } }, c.titulo),
                     c.descricao && React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 2 } }, c.descricao),
@@ -18469,7 +18567,7 @@ function ListaEditor({ turma, atualizar, campo, campos, icon: Icon, vazio, tipoE
         turma[campo].length === 0 ? (React.createElement(VazioLinha, { texto: vazio })) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, [...turma[campo]].reverse().map(item => {
             const campoData = campos.find(c => c.tipo === "date");
             const prazo = campoData ? diasRestantesInfo(item[campoData.k]) : null;
-            return (React.createElement("div", { key: item.id, style: itemCardStyle },
+            return (React.createElement("div", { key: item.id, className: "item-card", style: itemCardStyle },
                 React.createElement("div", { style: {
                         width: 30, height: 30, borderRadius: 3, background: T.paperAlt,
                         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
@@ -18526,7 +18624,7 @@ function AlunoApp({ user, onLogout }) {
                     } },
                     React.createElement(ChevronLeft, { size: 16 }),
                     " Voltar para minhas turmas"),
-                React.createElement(TurmaVisualizacao, { turma: turmaAtiva, aba: aba, setAba: setAba, user: user }))));
+                React.createElement(TurmaVisualizacao, { key: turmaAtiva.id, turma: turmaAtiva, aba: aba, setAba: setAba, user: user }))));
     }
     return (React.createElement("div", null,
         React.createElement(TopBar, { user: user, onLogout: onLogout, subtitle: "Painel do aluno" }),
@@ -18553,7 +18651,7 @@ function AlunoApp({ user, onLogout }) {
                     " Calend\u00E1rio"),
                 React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: T.muted, margin: "6px 0 10px" } }, "Minhas turmas"),
                 turmas.length === 0 && React.createElement("div", { style: { fontSize: 13, color: T.muted } }, "Nenhuma turma dispon\u00EDvel ainda."),
-                React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, turmas.map(t => (React.createElement("div", { key: t.id, onClick: () => { setTurmaAtivaId(t.id); setAba("conteudos"); }, style: {
+                React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, turmas.map(t => (React.createElement("div", { key: t.id, className: "side-turma", onClick: () => { setTurmaAtivaId(t.id); setAba("conteudos"); }, style: {
                         padding: "10px 12px", borderRadius: 3, cursor: "pointer",
                         display: "flex", alignItems: "center", gap: 8
                     } },
@@ -18565,7 +18663,7 @@ function AlunoApp({ user, onLogout }) {
                             " \u00B7 ",
                             t.professor)),
                     React.createElement(ChevronRight, { size: 14, color: T.muted })))))),
-            React.createElement("div", { style: { flex: 1, padding: "28px 32px", maxWidth: 900 } }, secao === "redacao" ? (React.createElement(RedacaoAluno, { user: user })) : secao === "calendario" ? (React.createElement(CalendarioView, { user: user, podeAdicionar: false, turmasProfessor: [] })) : (React.createElement(EmptyState, { icon: ClipboardList, titulo: "Escolha uma turma", texto: "Selecione uma turma na lista ao lado para abrir a p\u00E1gina dela, com conte\u00FAdos, livros, simulados, provas, reuni\u00F5es e o chat com o professor." }))))));
+            React.createElement("div", { className: "conteudo-principal", style: { flex: 1, padding: "28px 32px", maxWidth: 900 } }, secao === "redacao" ? (React.createElement(RedacaoAluno, { user: user })) : secao === "calendario" ? (React.createElement(CalendarioView, { user: user, podeAdicionar: false, turmasProfessor: [] })) : (React.createElement(AlunoInicio, { nome: user.nome }))))));
 }
 function TurmaVisualizacao({ turma, aba, setAba, user }) {
     return (React.createElement("div", null,
@@ -18582,7 +18680,7 @@ function TurmaVisualizacao({ turma, aba, setAba, user }) {
                 aba === "conteudos" && (turma.conteudos.length === 0 ? React.createElement(VazioLinha, { texto: "O professor ainda n\u00E3o registrou conte\u00FAdos." }) :
                     React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, [...turma.conteudos].reverse().map(c => {
                         const prazo = diasRestantesInfo(c.dataEntrega);
-                        return (React.createElement("div", { key: c.id, style: itemCardStyle },
+                        return (React.createElement("div", { key: c.id, className: "item-card", style: itemCardStyle },
                             React.createElement("div", { style: { flex: 1 } },
                                 React.createElement("div", { style: { fontWeight: 700, fontSize: 14 } }, c.titulo),
                                 c.descricao && React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 2 } }, c.descricao),
@@ -18602,7 +18700,7 @@ function TurmaVisualizacao({ turma, aba, setAba, user }) {
                                 React.createElement(EnvioAtividade, { turmaId: turma.id, tipo: "conteudo", itemId: c.id, itemTitulo: c.titulo, user: user }))));
                     }))),
                 aba === "livros" && (turma.livros.length === 0 ? React.createElement(VazioLinha, { texto: "Nada por aqui ainda." }) :
-                    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, [...turma.livros].reverse().map(item => (React.createElement("div", { key: item.id, style: itemCardStyle },
+                    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, [...turma.livros].reverse().map(item => (React.createElement("div", { key: item.id, className: "item-card", style: itemCardStyle },
                         React.createElement("div", { style: {
                                 width: 30, height: 30, borderRadius: 3, background: T.paperAlt,
                                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
@@ -18619,7 +18717,7 @@ function TurmaVisualizacao({ turma, aba, setAba, user }) {
                                 " ",
                                 item.arquivoNome)))))))),
                 aba === "reunioes" && (turma.reunioes.length === 0 ? React.createElement(VazioLinha, { texto: "Nada por aqui ainda." }) :
-                    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, [...turma.reunioes].reverse().map(item => (React.createElement("div", { key: item.id, style: itemCardStyle },
+                    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, [...turma.reunioes].reverse().map(item => (React.createElement("div", { key: item.id, className: "item-card", style: itemCardStyle },
                         React.createElement("div", { style: {
                                 width: 30, height: 30, borderRadius: 3, background: T.paperAlt,
                                 display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
@@ -18631,7 +18729,7 @@ function TurmaVisualizacao({ turma, aba, setAba, user }) {
                 (aba === "simulados" || aba === "provas") && (turma[aba].length === 0 ? React.createElement(VazioLinha, { texto: "Nada por aqui ainda." }) :
                     React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, [...turma[aba]].reverse().map(item => {
                         const prazo = diasRestantesInfo(item.data);
-                        return (React.createElement("div", { key: item.id, style: itemCardStyle },
+                        return (React.createElement("div", { key: item.id, className: "item-card", style: itemCardStyle },
                             React.createElement("div", { style: {
                                     width: 30, height: 30, borderRadius: 3, background: T.paperAlt,
                                     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
@@ -18845,7 +18943,7 @@ function PresencasAluno({ turmaId, user }) {
             React.createElement("div", null,
                 React.createElement("div", { style: { fontFamily: T.serif, fontWeight: 700, fontSize: 24, color: "#B8860B" } }, atrasos),
                 React.createElement("div", { style: { fontSize: 11.5, color: T.muted, fontWeight: 700 } }, "Atrasos"))),
-        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, minhas.map(m => (React.createElement("div", { key: m.data, style: itemCardStyle },
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, minhas.map(m => (React.createElement("div", { key: m.data, className: "item-card", style: itemCardStyle },
             React.createElement("div", { style: { flex: 1, fontWeight: 700, fontSize: 14 } }, fmtDataISO(m.data)),
             React.createElement("span", { style: { fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 3, color: "#fff", background: cor[m.status] } }, rotulo[m.status])))))));
 }
@@ -18961,7 +19059,7 @@ function CalendarioView({ user, podeAdicionar, turmasProfessor }) {
                 React.createElement("div", { style: { display: "flex", gap: 8 } },
                     React.createElement("button", { onClick: () => setMostrarForm(false), style: btnGhost }, "Cancelar"),
                     React.createElement("button", { onClick: adicionarEvento, style: btnPrimary }, "Salvar evento")))),
-            eventosDoDia.length === 0 ? (React.createElement(VazioLinha, { texto: "Nenhum evento neste dia." })) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, eventosDoDia.map(e => (React.createElement("div", { key: e.id, style: itemCardStyle },
+            eventosDoDia.length === 0 ? (React.createElement(VazioLinha, { texto: "Nenhum evento neste dia." })) : (React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, eventosDoDia.map(e => (React.createElement("div", { key: e.id, className: "item-card", style: itemCardStyle },
                 React.createElement("div", { style: { flex: 1 } },
                     React.createElement("div", { style: { fontWeight: 700, fontSize: 14 } }, e.titulo),
                     e.descricao && React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 2 } }, e.descricao),
