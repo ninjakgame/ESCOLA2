@@ -26,6 +26,21 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const MONGODB_DB = process.env.MONGODB_DB || "caderno_de_turma";
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
+async function testarChaveGemini() {
+  if (!GEMINI_API_KEY) return { temChave: false };
+  const info = { temChave: true, inicio: GEMINI_API_KEY.slice(0, 4), tamanho: GEMINI_API_KEY.length };
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", { headers: { "x-goog-api-key": GEMINI_API_KEY } });
+    const d = await r.json().catch(() => ({}));
+    info.status = r.status;
+    info.ok = r.ok;
+    if (!r.ok) info.mensagem = (d.error && d.error.message) || ("Erro " + r.status);
+  } catch (e) {
+    info.ok = false;
+    info.mensagem = "Sem conexão com o Google: " + e.message;
+  }
+  return info;
+}
 const PASTA_DADOS = path.join(__dirname, "dados");
 const ARQUIVO = path.join(PASTA_DADOS, "armazenamento.json");
 const PASTA_PUBLICA = path.join(__dirname, "public");
@@ -165,6 +180,7 @@ function criarServidor(arm) {
         }
         return responder(res, 405, { erro: "método não permitido" });
       }
+      if (url.pathname === "/api/ia/diagnostico") return responder(res, 200, await testarChaveGemini());
       // ---------- IA (Gemini): a chave fica aqui no servidor, nunca na página ----------
       if (url.pathname === "/api/ia") {
         if (req.method !== "POST") return responder(res, 405, { erro: "método não permitido" });
@@ -211,6 +227,14 @@ function criarServidor(arm) {
   const arm = MONGODB_URI ? await criarArmazenamentoMongo() : criarArmazenamentoArquivo();
   if (!MONGODB_URI) console.log("  AVISO: MONGODB_URI não definido. Usando arquivo (sem MongoDB).");
   if (!GEMINI_API_KEY) console.log("  AVISO: GEMINI_API_KEY não definido no .env. A IA (redação e questões) só funciona com a chave configurada.");
+  testarChaveGemini().then((r) => {
+    if (!r.temChave) return;
+    if (r.ok) console.log("  Chave do Gemini: OK (aceita pelo Google).");
+    else {
+      console.log("  Chave do Gemini: PROBLEMA -> " + r.mensagem);
+      console.log(`  (a chave lida do .env começa com "${r.inicio}" e tem ${r.tamanho} caracteres; chaves do AI Studio começam com "AIza" ou "AQ." — confira se copiou a chave inteira)`);
+    }
+  });
   criarServidor(arm).listen(PORT, "0.0.0.0", () => {
     console.log("==============================================");
     console.log("  Caderno de Turma está funcionando!");
