@@ -25,6 +25,7 @@ if (fs.existsSync(arquivoEnv)) {
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const MONGODB_DB = process.env.MONGODB_DB || "caderno_de_turma";
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
 const PASTA_DADOS = path.join(__dirname, "dados");
 const ARQUIVO = path.join(PASTA_DADOS, "armazenamento.json");
 const PASTA_PUBLICA = path.join(__dirname, "public");
@@ -141,7 +142,7 @@ function criarServidor(arm) {
       if (origemPermitida(origem)) {
         res.setHeader("Access-Control-Allow-Origin", origem);
         res.setHeader("Vary", "Origin");
-        res.setHeader("Access-Control-Allow-Methods", "GET, PUT, OPTIONS");
+        res.setHeader("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS");
         res.setHeader("Access-Control-Allow-Headers", "Content-Type");
         if (req.headers["access-control-request-private-network"]) res.setHeader("Access-Control-Allow-Private-Network", "true");
       }
@@ -163,6 +164,29 @@ function criarServidor(arm) {
           return responder(res, 200, { ok: true });
         }
         return responder(res, 405, { erro: "método não permitido" });
+      }
+      // ---------- IA (Gemini): a chave fica aqui no servidor, nunca na página ----------
+      if (url.pathname === "/api/ia") {
+        if (req.method !== "POST") return responder(res, 405, { erro: "método não permitido" });
+        if (!GEMINI_API_KEY) return responder(res, 503, { erro: "sem_chave" });
+        let pedido;
+        try { pedido = JSON.parse(await lerCorpo(req)); } catch (e) { return responder(res, 400, { erro: "pedido inválido" }); }
+        const caminho = String((pedido && pedido.caminho) || "");
+        if (!/^models(\/[A-Za-z0-9._-]+:generateContent)?$/.test(caminho)) return responder(res, 400, { erro: "caminho inválido" });
+        try {
+          const ehLista = caminho === "models";
+          const alvo = "https://generativelanguage.googleapis.com/v1beta/" + caminho + (ehLista ? "?pageSize=200" : "");
+          const r = await fetch(alvo, {
+            method: ehLista ? "GET" : "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+            body: ehLista ? undefined : JSON.stringify(pedido.corpo || {})
+          });
+          const dados = await r.json().catch(() => ({}));
+          return responder(res, 200, { status: r.status, dados });
+        } catch (e) {
+          console.error("Erro ao falar com o Google (IA):", e.message);
+          return responder(res, 502, { erro: "Este computador não conseguiu falar com o Google: " + e.message });
+        }
       }
       if (url.pathname === "/api/saude") return responder(res, 200, { ok: true });
       if (url.pathname === "/api/rede") return responder(res, 200, { enderecos: enderecosDaRede() });
@@ -186,6 +210,7 @@ function criarServidor(arm) {
   console.log("Iniciando o Caderno de Turma...");
   const arm = MONGODB_URI ? await criarArmazenamentoMongo() : criarArmazenamentoArquivo();
   if (!MONGODB_URI) console.log("  AVISO: MONGODB_URI não definido. Usando arquivo (sem MongoDB).");
+  if (!GEMINI_API_KEY) console.log("  AVISO: GEMINI_API_KEY não definido no .env. A IA (redação e questões) só funciona com a chave configurada.");
   criarServidor(arm).listen(PORT, "0.0.0.0", () => {
     console.log("==============================================");
     console.log("  Caderno de Turma está funcionando!");
