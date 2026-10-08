@@ -17299,7 +17299,9 @@ const CalendarClock = mkIcon('<rect x="3" y="5" width="18" height="16" rx="2"/><
    ATENÇÃO: qualquer pessoa que abrir o código-fonte desta página
    verá essa chave — não a exponha em um arquivo público.
 --------------------------------------------------------- */
-const CHAVE_API_GEMINI = "AQ.Ab8RN6IKf7jQg_cOqDujHJxW720HKppiCYIoiKLngSbmPaZ2AQ";
+// A chave agora fica no servidor (arquivo .env, linha GEMINI_API_KEY=...). Deixe vazio.
+// Só preencha aqui (chave que começa com "AIza") se NÃO usar o servidor.
+const CHAVE_API_GEMINI = "";
 /* ---------------------------------------------------------
    Armazenamento no MongoDB
    A página conversa com o servidor (server.js), que guarda
@@ -17486,10 +17488,38 @@ let modeloGeminiQueFunciona = null;
 function modeloIndisponivel(status, msg) {
     return status === 404 || /no longer available|not found|is not supported|not supported for generateContent/i.test(msg || "");
 }
+async function pedirGoogle(chave, caminho, corpo) {
+    // 1) pelo servidor (chave guardada no .env)
+    let semChave = false;
+    try {
+        const r = await fetch(`${API_URL}/api/ia`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ caminho, corpo }) });
+        const d = await r.json().catch(() => ({}));
+        if (r.status === 503 && d.erro === "sem_chave")
+            semChave = true;
+        else if (r.status === 502 && d.erro)
+            throw new Error(d.erro);
+        else if (typeof d.status === "number")
+            return { ok: d.status >= 200 && d.status < 300, status: d.status, data: d.dados || {} };
+    }
+    catch (e) {
+        if (e && e.message && !/failed to fetch|networkerror|load failed/i.test(e.message))
+            throw e;
+    }
+    // 2) plano B: direto do navegador, só se houver chave no código
+    if (chave && chave !== "via-servidor") {
+        const ehLista = caminho === "models";
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${caminho}${ehLista ? "?pageSize=200&" : "?"}key=${encodeURIComponent(chave)}`, ehLista ? {} : {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo)
+        });
+        const data = await res.json().catch(() => ({}));
+        return { ok: res.ok, status: res.status, data };
+    }
+    throw new Error(semChave ? "Chave de IA não configurada no servidor (GEMINI_API_KEY no arquivo .env)" : "Servidor do Caderno de Turma não respondeu (ligue o servidor)");
+}
 async function descobrirModelosGemini(chave) {
     try {
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(chave)}`);
-        const d = await r.json();
+        const r = await pedirGoogle(chave, "models", null);
+        const d = r.data;
         const lista = (d.models || [])
             .filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
             .map(m => String(m.name || "").replace(/^models\//, ""))
@@ -17506,12 +17536,8 @@ async function chamarGemini(chave, corpo) {
     let ultimoErro = null;
     async function tentar(modelo) {
         tentados.add(modelo);
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(chave)}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(corpo)
-        });
-        const data = await res.json().catch(() => ({}));
+        const res = await pedirGoogle(chave, `models/${modelo}:generateContent`, corpo);
+        const data = res.data || {};
         if (res.ok && !data.error) {
             modeloGeminiQueFunciona = modelo;
             return { ok: true, data };
@@ -18305,12 +18331,16 @@ function mensagemErroIA(e) {
         return "Não consegui falar com o serviço de IA do Google (falha de conexão). Confira a internet deste computador e se algum antivírus, firewall, bloqueador de anúncios ou a rede da escola está bloqueando o endereço generativelanguage.googleapis.com. Depois tente de novo.";
     if (/503|overloaded|unavailable|high demand/i.test(msg))
         return "O serviço de IA está sobrecarregado neste momento. Aguarde alguns segundos e tente de novo.";
+    if (/n[ãa]o configurada/i.test(msg))
+        return "A chave da IA ainda não foi colocada no servidor. Avise a direção (arquivo .env, linha GEMINI_API_KEY).";
+    if (/n[ãa]o respondeu/i.test(msg))
+        return "O servidor do Caderno de Turma não respondeu. Confirme se ele está ligado.";
     if (/quota|rate.?limit|resource.?exhausted|429/i.test(msg))
         return "O limite gratuito de uso da IA foi atingido por agora. Espere um pouco e tente de novo.";
     if (/no longer available|Nenhum modelo de IA/i.test(msg))
         return "Nenhum modelo de IA disponível foi encontrado para a chave configurada. Avise a direção para conferir a chave do Gemini.";
     if (/api.?key|authenticat|unauthorized|permission|401|403/i.test(msg))
-        return "A chave de IA configurada não é válida. Avise a direção da escola para corrigi-la.";
+        return "A chave de IA configurada não é válida. Avise a direção da escola para corrigi-la." + (msg ? " (Resposta do Google: " + msg.slice(0, 200) + ")" : "");
     if (/JSON|Unexpected token|formato/i.test(msg))
         return "Não consegui entender a resposta da IA. Tente gerar de novo (se persistir, peça menos questões por vez).";
     if (e && e.name === "TypeError")
@@ -19519,7 +19549,7 @@ function RedacaoAluno({ user }) {
     const [previewSrc, setPreviewSrc] = useState(null);
     const [resultadoAtual, setResultadoAtual] = useState(null);
     const [erroApi, setErroApi] = useState("");
-    const chaveApi = CHAVE_API_GEMINI;
+    const chaveApi = CHAVE_API_GEMINI || "via-servidor";
     const fileRef = useRef(null);
     const key = "redacoes-todas";
     useEffect(() => {
@@ -19604,8 +19634,11 @@ Escreva tudo em português do Brasil.`;
             else if (/no longer available|Nenhum modelo de IA/i.test(msg)) {
                 setErroApi("Os modelos de IA do Google mudaram e nenhum disponível foi encontrado para a chave configurada. Avise a direção para conferir a chave do Gemini.");
             }
+            else if (/n[ãa]o configurada|n[ãa]o respondeu/i.test(msg)) {
+                setErroApi(/n[ãa]o respondeu/i.test(msg) ? "O servidor do Caderno de Turma não respondeu. Confirme se ele está ligado." : "A chave da IA ainda não foi colocada no servidor. Avise a direção (arquivo .env, linha GEMINI_API_KEY).");
+            }
             else if (/api.?key|authenticat|unauthorized|permission|401|403/i.test(msg)) {
-                setErroApi("A chave de IA configurada não é válida. Avise a direção da escola para corrigi-la.");
+                setErroApi("A chave de IA configurada não é válida. Avise a direção da escola para corrigi-la." + (msg ? " (Resposta do Google: " + msg.slice(0, 200) + ")" : ""));
             }
             else if (/JSON|Unexpected token/i.test(msg)) {
                 setErroApi("Não consegui entender a resposta da IA para essa foto. Tente novamente com uma imagem mais nítida.");
